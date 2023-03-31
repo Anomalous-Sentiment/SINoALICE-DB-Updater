@@ -23,7 +23,7 @@ class ContextFilter(logging.Filter):
         record.hostname = ContextFilter.hostname
         return True
 
-syslog = SysLogHandler(address=('***REMOVED***', ***REMOVED***))
+syslog = SysLogHandler(address=((os.getenv('LOGGING_URL'), (os.getenv('LOGGING_PORT'))))
 syslog.addFilter(ContextFilter())
 
 logging.Formatter.converter = time.gmtime
