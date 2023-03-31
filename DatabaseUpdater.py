@@ -112,6 +112,8 @@ class DatabaseUpdater():
             autoload_with=self.engine
         )
 
+        log.info('DatabaseUpdater Initialised')
+
     def run(self):
         # Shedule to run the update task every day, 5 min after reset?? Time zone check?
         self.sched.add_job(self._daily_update, 'cron', hour=5, minute=5)
