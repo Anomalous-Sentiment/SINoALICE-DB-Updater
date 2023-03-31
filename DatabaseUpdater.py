@@ -349,12 +349,12 @@ class DatabaseUpdater():
             # Update the guilds
             guild_api = GuildAPI()
 
+            #with open(f'guild_list.json', 'r') as f:
+            #    guild_id_list = json.load(f)
+
             # Update the players using guild list (Get from database)
             guild_id_list = self._get_guild_ids()
             guild_list = guild_api.get_guild_list(guild_id_list)
-
-            #with open(f'guild_list.json', 'r') as f:
-            #    guild_list = json.load(f)
 
             # Update players with revised guild id list
             self._update_players(guild_list)
