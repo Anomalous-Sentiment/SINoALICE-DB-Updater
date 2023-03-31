@@ -359,14 +359,17 @@ class DatabaseUpdater():
         except Exception as Argument:
             log.exception('Daily update failed.')
 
-    def _get_db_timeslots(self):
-        ts_stmt = select(self.timeslot_table)
+    def _get_gc_timeslots(self):
+        # Get timeslots where gc is held
+        ts_stmt = select(self.timeslot_table.c.timeslot, self.timeslot_table.c.time_in_utc).where(self.timeslot_table.c.gc_available == True)
 
         with self.engine.connect() as conn:
             ts_data = conn.execute(ts_stmt).all()
             conn.commit()
 
-        # Format into list of dicts
+        # Format into list of dicts?
+
+        return ts_data
 
     def _update_db_gc_dates(self, gc_num, gc_date_dict):
         log.info('Updating GC dates...')
@@ -491,10 +494,15 @@ class DatabaseUpdater():
             day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=5)), args=[curr_gc])
             self.job_list.append(day_2_job)
 
+            gc_timeslots = self._get_gc_timeslots()
+
             # Schedule an update of the gc ranks after every time slot's colo starting from day 2
             for day in range(2, prelim_days + 1):
-                for timeslot, offset in colo_time_offsets:
-                    update_datetime = start_date + timedelta(days=day) + offset + timedelta(minutes=5)
+                for timeslot, utc_time in gc_timeslots:
+                    #update_datetime = start_date + timedelta(days=day) + offset + timedelta(minutes=5)
+                    update_datetime = start_date + timedelta(days=day)
+                    # Set the hours and minute where the colo ends + 3 min
+                    update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
                     # Check if current day is before final day
                     if day < prelim_days:
                         predict = True
