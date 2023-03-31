@@ -1,7 +1,7 @@
-from api.GuildAPI import GuildAPI
-from api.PlayerAPI import PlayerAPI
-from api.GranColoAPI import GranColoAPI
-from api.NoticesParser import NoticesParser
+from sinoalice.api.GuildAPI import GuildAPI
+from sinoalice.api.PlayerAPI import PlayerAPI
+from sinoalice.api.GranColoAPI import GranColoAPI
+from sinoalice.api.NoticesParser import NoticesParser
 from sqlalchemy import create_engine, Table, MetaData, select
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
