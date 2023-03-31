@@ -16,12 +16,16 @@ import time
 import logging
 import socket
 from logging.handlers import SysLogHandler
+import traceback
+load_dotenv()
+
 
 class ContextFilter(logging.Filter):
     hostname = socket.gethostname()
     def filter(self, record):
         record.hostname = ContextFilter.hostname
         return True
+
 
 syslog = SysLogHandler(address=((os.getenv('LOGGING_URL'), int((os.getenv('LOGGING_PORT'))))))
 syslog.addFilter(ContextFilter())
@@ -35,9 +39,26 @@ log.setLevel(logging.INFO)
 
 # Add the handler we created
 log.addHandler(syslog)
+# Only used because syslog doesn't handle multline excpetions with indentation
+def log_exception(msg, tb):
+    # Log the message
+    log.error(msg)
 
-
-load_dotenv()
+    # Log every line of exception separately to maintain indentation
+    lines = tb.split('\n')
+    for l in lines:
+        # Check line exceeds 1024 bytes (UDP) OR 100,000 bytes (TCP)
+        # UTF 8 max char size = 4 bytes
+        # ASCII max char size = 1 byte
+        # UTF 8 max chars = 25,000
+        # However, I don't expect such long messages to be of any use, so using a smaller limit
+        # Note: This is prone to sending logs out of order due to the nature of networks...
+        max_line_length = 15000
+        if len(l) <= max_line_length:
+            log.error(l)
+        else:
+            # Print max number of characters followed by truncated message
+            log.error(l[:max_line_length] + ' --Line Truncated--')
 
 class DatabaseUpdater():
     def __init__(self):
@@ -322,7 +343,7 @@ class DatabaseUpdater():
     def _daily_update(self):
         try:
             log.info('Starting daily update...')
-            start = time.time()
+
             notices_parser = NoticesParser()
 
             # Update the guilds
@@ -350,12 +371,10 @@ class DatabaseUpdater():
                     # Run the function to schedule gc ranking updates
                     self._schedule_gc_updates(gc_dates)
 
-            end = time.time()
-
-
             log.info('Daily update complete')
-        except Exception as Argument:
-            log.exception('Daily update failed.')
+        except:
+            tb = traceback.format_exc()
+            log_exception('Daily update failed.', tb)
 
     def _get_gc_timeslots(self):
         # Get timeslots where gc is held
@@ -525,13 +544,14 @@ class DatabaseUpdater():
                     self.job_list.append(new_job)
 
                     log.info('Update Scheduled for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
-        except Exception as Argument:
-            log.exception('Failed to schedule GC updates')
+        except:
+            tb = traceback.format_exc()
+            log_exception('Failed to schedule GC updates', tb)
 
     def _day_2_update(self, gc_num):
         log.info('Running day 2 GC rank update...')
         # Update db to ensure database is up to date
-        #self._full_gc_rank_update(2)
+        self._full_gc_rank_update(2)
 
         # Get data from db and fills in the day 1 and day 2 predicted matches (Backfilling day 1)
         self._update_day_1_matches(gc_num)
@@ -680,8 +700,9 @@ class DatabaseUpdater():
             if predict == True:
                 # Run the matching function (Gets data from database)
                 self._general_matchmaking(gc_num, day, timeslot)
-        except Exception as Argument:
-            log.exception('General GC update failed.')
+        except:
+            tb = traceback.format_exc()
+            log_exception('General GC update failed.', tb)
 
     def _general_matchmaking(self, gc_num, day, timeslot):
         log.info('Running general matchmaking function for GC ' + str(gc_num) + ', predicting day ' + str(day + 1) + ' matches for timeslot: ' + str(timeslot))
