@@ -1,0 +1,3 @@
+[submodule "SINoALICE-Simplified-API"]
+	path = SINoALICE-Simplified-API
+	url = https://github.com/Anomalous-Sentiment/SINoALICE-Simplified-API
