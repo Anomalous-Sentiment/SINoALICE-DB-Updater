@@ -492,26 +492,36 @@ class DatabaseUpdater():
             # Update db with GC dates
             self._update_db_gc_dates(curr_gc, date_dict)
 
-            # Schedule the initial gc rank update on day 2, 5 min after reset
-            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=5)), args=[curr_gc])
+            # Schedule the initial gc rank update on day 2, 1 min after reset
+            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=1)), args=[curr_gc])
             self.job_list.append(day_2_job)
 
             gc_timeslots = self._get_gc_timeslots()
 
-            # Schedule an update of the gc ranks after every time slot's colo starting from day 2
-            for day in range(2, prelim_days + 1):
+            # Schedule an update of the gc ranks after every time slot's colo starting from day 2 (0 indexed, idx 1 = day 2)
+            for day in range(1, prelim_days):
                 for timeslot, utc_time in gc_timeslots:
-                    #update_datetime = start_date + timedelta(days=day) + offset + timedelta(minutes=5)
-                    update_datetime = start_date + timedelta(days=day)
-                    # Set the hours and minute where the colo ends + 3 min
-                    update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
+                    # Calculate the time to run the update
+
+                    # Check if time earlier than reset time (5 AM UTC)
+                    if utc_time < datetime.time(5, 00, 00):
+                        # If earlier, increase the day by 1 (Because GC only starts after reset)
+                        update_datetime = start_date + timedelta(days=day + 1)
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
+                    else:                            
+                        # Else, do not modify day value
+                        update_datetime = start_date + timedelta(days=day)
+                        # Set the hours and minute where the colo ends + 3 min
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
+
                     # Check if current day is before final day
                     if day < prelim_days:
                         predict = True
                     else:
                         predict = False
-                    # Schedule update job and add to list
-                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day, timeslot, predict])
+
+                    # Schedule update job and add to list. The day is increased by 1, to make it indexed by 1, so 0 idx is day 1
+                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict])
                     self.job_list.append(new_job)
 
                     log.info('Update Scheduled for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
