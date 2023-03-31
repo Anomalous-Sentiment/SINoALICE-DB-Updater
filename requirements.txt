@@ -1,0 +1,9 @@
+pycryptodome
+msgpack
+python-dotenv
+aiohttp
+asyncio
+beautifulsoup4
+SQLAlchemy
+apscheduler
+google-play-scraper

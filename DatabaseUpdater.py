@@ -1,0 +1,753 @@
+from api.GuildAPI import GuildAPI
+from api.PlayerAPI import PlayerAPI
+from api.GranColoAPI import GranColoAPI
+from api.NoticesParser import NoticesParser
+from sqlalchemy import create_engine, Table, MetaData, select
+from sqlalchemy.dialects.postgresql import insert
+import psycopg2
+from dotenv import load_dotenv
+from datetime import datetime, date, timedelta
+from apscheduler.schedulers.background import BlockingScheduler
+import os
+from pytz import utc
+import itertools
+import json
+import time
+import logging
+import socket
+from logging.handlers import SysLogHandler
+
+class ContextFilter(logging.Filter):
+    hostname = socket.gethostname()
+    def filter(self, record):
+        record.hostname = ContextFilter.hostname
+        return True
+
+syslog = SysLogHandler(address=('***REMOVED***', ***REMOVED***))
+syslog.addFilter(ContextFilter())
+
+logging.Formatter.converter = time.gmtime
+formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+syslog.setFormatter(formatter)
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
+
+# Add the handler we created
+log.addHandler(syslog)
+
+
+load_dotenv()
+
+class DatabaseUpdater():
+    def __init__(self):
+        self.job_list = []
+        self.sched = BlockingScheduler(timezone=utc)
+        # Pre pool ping because database might not be started yet.
+        self.engine = create_engine(os.getenv('POSTGRES_URL'), pool_pre_ping=True, connect_args={'sslmode':'require'})
+        self.metadata = MetaData()
+        self.guild_table = Table(
+            'guilds', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.player_data_table = Table(
+            'base_player_data', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.extra_player_data_table = Table(
+            'extra_player_data', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.gc_data_table = Table(
+            'gc_data', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.day_0_table = Table(
+            'temp', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.day_table = Table(
+            'gc_days', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.timeslot_table = Table(
+            'timeslots', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+        self.match_table = Table(
+            'gc_predictions', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        # This is a view
+        self.formatted_match_table = Table(
+            'gc_matchups_id', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.gc_event_table = Table(
+            'gc_events', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+        self.gc_finals_table = Table(
+            'gc_finals', 
+            self.metadata, 
+            autoload_with=self.engine
+        )
+
+    def run(self):
+        # Shedule to run the update task every day, 5 min after reset?? Time zone check?
+        self.sched.add_job(self._daily_update, 'cron', hour=5, minute=5)
+        self.sched.start()
+
+        log.info('DatabaseUpdater running...')
+
+    def _update_guilds_table(self, guild_list):
+        log.info('Guild table update starting...')
+        converted_list = []
+
+        # Get the list of table columns, excluding guilddataid and updated_at
+        table_cols = self.metadata.tables['guilds']
+        full_guild_columns = [column.key for column in table_cols.columns]
+        guild_columns =  list(filter(lambda col: col != 'updated_at', full_guild_columns))
+
+        # Process guild dict keys to suitable format
+        for guild in guild_list:
+            if 'createdTime' in guild:
+                guild['createdTime'] = datetime.utcfromtimestamp(int(guild['createdTime'])).isoformat()
+
+            # Convert to lower case keys
+            guild =  {k.lower(): v for k, v in guild.items()}
+
+            # Set value to null if column not in dict
+            for column in guild_columns:
+                if column not in guild:
+                    guild[column] = None
+
+            # Delete extra keys to avoid issues with insert
+            for key in list(guild.keys()):
+                if key not in guild_columns:
+                    #print('Extra key: ' + key)
+                    # Extra key/column in data, remove
+                    del guild[key]
+
+            converted_list.append(guild)
+
+        # Create insert and update statements
+        insert_stmt = insert(self.guild_table).values(converted_list)
+        # Update all column names except primary key
+        update_columns = {col.name: col for col in insert_stmt.excluded if col.name not in ('guilddataid')}
+        update_statement = insert_stmt.on_conflict_do_update(
+            index_elements=['guilddataid'], 
+            set_=update_columns
+        )
+
+        # Execute command
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+
+        log.info('Guild table update complete')
+
+    def _update_players(self, guild_list):
+        log.info('Player table update starting...')
+        converted_player_list = []
+        player_api = PlayerAPI()
+        table_cols = self.metadata.tables['extra_player_data']
+        base_table_cols = self.metadata.tables['base_player_data']
+        base_player_data_columns = [column.key for column in base_table_cols.columns]
+        base_player_data_columns =  list(filter(lambda col: col != 'updated_at', base_player_data_columns))
+        extra_player_data_columns = [column.key for column in table_cols.columns]
+        extra_player_data_columns =  list(filter(lambda col: col != 'updated_at', extra_player_data_columns))
+
+        # Get the players in guilds
+        player_list = player_api.get_players_in_guilds(guild_list=guild_list)
+
+        # Get player ids from db
+        db_player_id_list = self._get_player_ids_from_db()
+
+        player_id_set = set(db_player_id_list)
+
+        # Add player ids from api to ids from db if unique using unique properties of set
+        for player_data in player_list:
+            player_id_set.add(player_data['userData']['userId'])
+
+        # Get the list of basic player info using player ids
+        base_player_list = player_api.get_basic_player_info(list(player_id_set))
+
+
+        #with open(f'new_base_player_list.json', 'r') as f:
+        #    base_player_list = json.load(f)
+            
+        #with open(f'new_extra_player_list.json', 'r') as f:
+        #    player_list = json.load(f)
+
+        converted_base_player_list = []
+        for base_player in base_player_list:
+            player =  {k.lower(): v for k, v in base_player.items()}
+
+            # Add checks like extra player data & guild data to remove extra keys, or set keys to none if not existing
+            for column in base_player_data_columns:
+                if column not in player:
+                    #print('Key not in data: ' + column)
+                    player[column] = None
+
+            for key in list(player.keys()):
+                if key not in base_player_data_columns:
+                    #print('Extra key: ' + key)
+                    # Extra key/column in data, remove
+                    del player[key]
+
+            converted_base_player_list.append(player)
+
+
+        # Convert data for insertion into db
+        for player in player_list:
+            if 'cleaningUpdatedTime' in player['userData'] and player['userData']['cleaningUpdatedTime'] != None:
+                player['userData']['cleaningUpdatedTime'] = datetime.utcfromtimestamp(int(player['userData']['cleaningUpdatedTime'])).isoformat()
+            if 'createdTime' in player['userData'] and player['userData']['createdTime'] != None:
+                player['userData']['createdTime'] = datetime.utcfromtimestamp(int(player['userData']['createdTime'])).isoformat()
+            if 'lastAccessTime' in player['userData'] and player['userData']['lastAccessTime'] != None:
+                player['userData']['lastAccessTime'] = datetime.utcfromtimestamp(int(player['userData']['lastAccessTime'])).isoformat()
+            if 'staminaUpdatedTime' in player['userData'] and player['userData']['staminaUpdatedTime'] != None:
+                player['userData']['staminaUpdatedTime'] = datetime.utcfromtimestamp(int(player['userData']['staminaUpdatedTime'])).isoformat()
+            if 'tutorialFinishTime' in player['userData'] and player['userData']['tutorialFinishTime'] != None:
+                player['userData']['tutorialFinishTime'] = datetime.utcfromtimestamp(int(player['userData']['tutorialFinishTime'])).isoformat()
+
+            player =  {k.lower(): v for k, v in player['userData'].items()}
+
+            for column in extra_player_data_columns:
+                if column not in player:
+                    #print('Key not in data: ' + column)
+                    player[column] = None
+
+            for key in list(player.keys()):
+                if key not in extra_player_data_columns:
+                    #print('Extra key: ' + key)
+                    # Extra key/column in data, remove
+                    del player[key]
+
+            converted_player_list.append(player)
+
+        insert_base_player_stmt = insert(self.player_data_table).values(converted_base_player_list)
+        update_columns = {col.name: col for col in insert_base_player_stmt.excluded if col.name not in ('userid')}
+        update_statement = insert_base_player_stmt.on_conflict_do_update(
+            index_elements=['userid'], 
+            set_=update_columns
+        )
+
+        insert_stmt2 = insert(self.extra_player_data_table).values(converted_player_list)
+        update_columns2 = {col.name: col for col in insert_stmt2.excluded if col.name not in ('userid')}
+        update_statement2 = insert_stmt2.on_conflict_do_update(
+            index_elements=['userid'], 
+            set_=update_columns2
+        )
+
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+            conn.execute(update_statement2)
+            conn.commit()
+
+        log.info('Player table update complete')
+
+    def _full_gc_rank_update(self, day=None):
+        log.info('Full GC rank update starting...')
+        gc_api = GranColoAPI()
+
+        # Get the rank list of the time slot
+        full_rank_list = gc_api.get_full_rank_list()
+
+        converted_data = []
+        for data in full_rank_list:
+            new_data =  {k.lower(): v for k, v in data.items()}
+            if day is not None:
+                new_data['gcday'] = day
+            converted_data.append(new_data)
+
+        # Insert into database 
+        insert_gc_ranks = insert(self.gc_data_table)
+        update_gc_ranks = {col.name: col for col in insert_gc_ranks.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
+        update_statement = insert_gc_ranks.on_conflict_do_update(
+            index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
+            set_=update_gc_ranks
+        )
+        with self.engine.connect() as conn:
+            conn.execute(update_statement, converted_data)
+            conn.commit()
+
+        log.info('Full GC rank update complete')
+
+    def _update_gc_ranks(self, gc_num, day, timeslot):
+        log.info('GC ' + str(gc_num) + ' , day ' + str(day) + ' rank update for timeslot: ' + str(timeslot) + ' starting...')
+        gc_api = GranColoAPI()
+
+        # Get the rank list of the time slot
+        timeslot_rank_list = gc_api.get_ts_rank_list(timeslot)
+
+        converted_data = []
+        for data in timeslot_rank_list:
+            new_data =  {k.lower(): v for k, v in data.items()}
+            new_data['gcday'] = day
+            converted_data.append(new_data)
+
+        # Insert into database 
+        insert_gc_ranks = insert(self.gc_data_table).values(converted_data)
+        update_gc_ranks = {col.name: col for col in insert_gc_ranks.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
+        update_statement = insert_gc_ranks.on_conflict_do_update(
+            index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
+            set_=update_gc_ranks
+        )
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+        
+
+    def _daily_update(self):
+        try:
+            log.info('Starting daily update...')
+            start = time.time()
+            notices_parser = NoticesParser()
+
+            # Update the guilds
+            guild_api = GuildAPI()
+
+            # Update the players using guild list (Get from database)
+            guild_id_list = self._get_guild_ids()
+            guild_list = guild_api.get_guild_list(guild_id_list)
+
+            #with open(f'guild_list.json', 'r') as f:
+            #    guild_list = json.load(f)
+
+            # Update players with revised guild id list
+            self._update_players(guild_list)
+            # Once players updated, update guilds
+            self._update_guilds_table(guild_list)
+
+            # Check if GC dates available
+            gc_dates = notices_parser.get_gc_dates()
+
+            if gc_dates != None:
+                # Check if today is before prelim date
+                if datetime.utcnow() < gc_dates['prelims']['start']:
+                    # Run the function to schedule gc ranking updates
+                    self._schedule_gc_updates(gc_dates)
+
+            end = time.time()
+
+
+            log.info('Daily update complete')
+        except Exception as Argument:
+            log.exception('Daily update failed.')
+
+    def _get_db_timeslots(self):
+        ts_stmt = select(self.timeslot_table)
+
+        with self.engine.connect() as conn:
+            ts_data = conn.execute(ts_stmt).all()
+            conn.commit()
+
+        # Format into list of dicts
+
+    def _update_db_gc_dates(self, gc_num, gc_date_dict):
+        log.info('Updating GC dates...')
+        data = [
+            {
+                'gvgeventid': gc_num,
+                'entry_start': gc_date_dict['entry']['start'].isoformat(),
+                'entry_end': gc_date_dict['entry']['end'].isoformat(),
+                'prelim_start': gc_date_dict['prelim']['start'].isoformat(),
+                'prelim_end': gc_date_dict['prelim']['end'].isoformat()
+            }
+        ]
+
+        finals_data = [
+            {
+                'gvgeventid': gc_num,
+                'finals_group': 'A',
+                'start_time': gc_date_dict['finals']['grp_a_start'].isoformat(),
+                'end_time': gc_date_dict['finals']['grp_a_end'].isoformat()
+            },
+            {
+                'gvgeventid': gc_num,
+                'finals_group': 'B',
+                'start_time': gc_date_dict['finals']['grp_b_start'].isoformat(),
+                'end_time': gc_date_dict['finals']['grp_b_end'].isoformat()
+            }
+        ]
+
+        # Update db with new GC dates
+        gc_date_stmt = insert(self.gc_event_table).values(data)
+        update_gc_dates = {col.name: col for col in gc_date_stmt.excluded if col.name not in ('gvgeventid')}
+        update_statement = gc_date_stmt.on_conflict_do_update(
+            index_elements=['gvgeventid'], 
+            set_=update_gc_dates
+        )
+
+        gc_finals_data_stmt = insert(self.gc_finals_table).values(finals_data)
+        update_gc_finals = {col.name: col for col in gc_finals_data_stmt.excluded if col.name not in ('gvgeventid')}
+        update_finals_statement = gc_finals_data_stmt.on_conflict_do_update(
+            index_elements=['gvgeventid'], 
+            set_=update_finals_statement
+        )
+
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+            conn.execute(update_finals_statement)
+            conn.commit()
+
+
+    def _get_guild_ids(self):
+        converted_list = []
+        # Select all guilddataid s from table
+        guild_statement = select(self.guild_table.c.guilddataid)
+
+        with self.engine.connect() as conn:
+            guild_id_list = conn.execute(guild_statement).all()
+            conn.commit()
+
+        # Convert to list of dicts
+        for guilddataid, in guild_id_list:
+            converted_row = {
+                'guildDataId': guilddataid
+            }
+            converted_list.append(converted_row)
+
+        return converted_list
+
+    def _get_player_ids_from_db(self):
+        id_list = []
+        # Select all guilddataid s from table
+        player_statement = select(self.player_data_table.c.userid)
+
+        with self.engine.connect() as conn:
+            player_id_list = conn.execute(player_statement).all()
+            conn.commit()
+
+        # Convert to list of dicts
+        for userid, in player_id_list:
+            id_list.append(userid)
+
+        return id_list
+
+    def _schedule_gc_updates(self, date_dict):
+        try:    
+            log.info('Scheduling GC updates...')
+            start_date = date_dict['prelims']['start']
+            end_date = date_dict['prelims']['end']
+            # The time slot number, and the hours offset from reset time
+            colo_time_offsets = [
+                (3, timedelta(hours=14)),
+                (4, timedelta(hours=15)),
+                (5, timedelta(hours=16)),
+                (6, timedelta(hours=18)),
+                (7, timedelta(hours=20)),
+                (8, timedelta(hours=21)),
+                (9, timedelta(hours=22)),
+                (10, timedelta(hours=23)),
+                (12, timedelta(hours=8)),
+                (13, timedelta(hours=9)),
+            ]
+
+            # Remove all previously scheduled gc updates
+            for job in self.job_list:
+                job.remove()
+
+            # Use the first month of gc to calculate the current GC number
+            # This assumes that a GC occurs every month, and only once every month. This will become inaccurate otherwise
+            first_gc_month = datetime(2020, 8, 1)
+            curr_gc = ((start_date.year - first_gc_month.year) * 12 + start_date.month - first_gc_month.month) + 1
+
+            log.info('Current GC: ' + str(curr_gc))
+
+            # Calculate number of days in prelims (In case it ever changes, though I doubt it will)
+            # The 1 second timedelta is because the end datetime is 1 sec short of being a full 6 days right now
+            prelim_days = (end_date - start_date + timedelta(seconds=1)).days
+
+            # Update db with GC dates
+            self._update_db_gc_dates(curr_gc, date_dict)
+
+            # Schedule the initial gc rank update on day 2, 5 min after reset
+            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=5)), args=[curr_gc])
+            self.job_list.append(day_2_job)
+
+            # Schedule an update of the gc ranks after every time slot's colo starting from day 2
+            for day in range(2, prelim_days + 1):
+                for timeslot, offset in colo_time_offsets:
+                    update_datetime = start_date + timedelta(days=day) + offset + timedelta(minutes=5)
+                    # Check if current day is before final day
+                    if day < prelim_days:
+                        predict = True
+                    else:
+                        predict = False
+                    # Schedule update job and add to list
+                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day, timeslot, predict])
+                    self.job_list.append(new_job)
+
+                    log.info('Update Scheduled for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+        except Exception as Argument:
+            log.exception('Failed to schedule GC updates')
+
+    def _day_2_update(self, gc_num):
+        log.info('Running day 2 GC rank update...')
+        # Update db to ensure database is up to date
+        #self._full_gc_rank_update(2)
+
+        # Get data from db and fills in the day 1 and day 2 predicted matches (Backfilling day 1)
+        self._update_day_1_matches(gc_num)
+
+        # Also update the predictions for day 2 aftwerwards
+        # Get list of timeslots from db
+        get_ts_list = select(self.timeslot_table.c.timeslot).where(self.timeslot_table.c.gc_available == True)
+
+        with self.engine.connect() as conn:
+            ts_list = conn.execute(get_ts_list).all()
+            conn.commit()
+
+        log.info('Rank updates for day 2 complete')
+
+        log.info('Starting GC match predictions...')
+        for ts, in ts_list: 
+            # Update ever ts in gc
+            self._general_matchmaking(gc_num, 1, ts)
+        
+        log.info('GC matchmaking predictions complete')
+
+    def _initial_gc_prediction(self, ts_guild_rank_list):
+        log.info('Starting initial GC match predictions...')
+        match_list = []
+        # Takes a list of guilds in a ts and predicts day 1 matchups
+        # Sort by rankings
+        def get_ranking(elem):
+            return elem['ranking']
+
+        ts_guild_rank_list.sort(key=get_ranking)
+
+        # Match each guild with the next guild in rankings
+        # Get guilds in 1st, 3rd, 5th, places etc...
+        list_a = ts_guild_rank_list[0::2]
+        list_b = ts_guild_rank_list[1::2]
+
+        # If there is an odd number of guilds, is the final guild is excluded from matching? Needs to be checked
+        for guild_a, guild_b in itertools.zip_longest(list_a, list_b):
+            # Only guild_b has a possibility of being None
+            if guild_b is not None:
+                pairing = {
+                    'guilddataid': guild_a['guilddataid'],
+                    'opponentguilddataid': guild_b['guilddataid'],
+                    'gcday': guild_a['gcday'],
+                    'gvgeventid': guild_a['gvgeventid']
+                }
+
+                alt_pairing = {
+                    'guilddataid': guild_b['guilddataid'],
+                    'opponentguilddataid': guild_a['guilddataid'],
+                    'gcday': guild_b['gcday'],
+                    'gvgeventid': guild_b['gvgeventid']
+                }
+
+                match_list.append(pairing)
+                match_list.append(alt_pairing)
+            else:
+                pairing = {
+                    'guilddataid': guild_a['guilddataid'],
+                    'opponentguilddataid': None,
+                    'gcday': guild_a['gcday'],
+                    'gvgeventid': guild_a['gvgeventid']
+                }
+                match_list.append(pairing)
+
+        log.info('Initial predictions complete')
+
+        return match_list
+
+    def _update_day_1_matches(self, gc_num):
+        log.info('Running day 1 match interpolation...')
+        # Function to update the day 1 matchmaking list based on guilds participating in GC
+        # Get the full day 1 ranking list
+        day_1_guild_list = []
+        day_1_statement = select(self.gc_data_table.c.guilddataid).where(self.gc_data_table.c.gvgeventid == gc_num)
+
+
+        # Get the day 0 rank list (pre-day 1)
+        day_0_guild_list = []
+        day_0_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype)
+
+        # Get time slots participating in GC
+        ts_statement = select(self.timeslot_table.c.gvgtimetype).where(self.timeslot_table.c.gc_available == True)
+
+        with self.engine.connect() as conn:
+            day_0_guild_list = conn.execute(day_0_statement).all()
+            day_1_guild_list = conn.execute(day_1_statement).all()
+            timeslots = conn.execute(ts_statement).all()
+            conn.commit()
+
+        id_list = []
+        for guild in day_1_guild_list:
+            # Add only the guilddataid to new list. New list contains all guilddataids that are in the specified time slot
+            id_list.append(guild[0])
+
+        # Filter out the guilds that were not in day 1 (Not participating in GC)
+        participating_guild_ids = [guild for guild in day_0_guild_list if guild[1] in id_list]
+
+        working_list = []
+        # Convert to list of dicts for easy working
+        for guild in participating_guild_ids:
+            new_dict = {
+                'gcday': 1, # This function is only ever used for day 1
+                'gvgeventid': guild[0],
+                'guilddataid': guild[1],
+                'ranking': guild[2],
+                'gvgtimetype': guild[3]
+            }
+
+            working_list.append(new_dict)
+
+        match_list = []
+        # Perform the initial day 1 matchmaking function again for actual day 1 matches for each time slot
+        for time_type_tuple in timeslots:
+            ts_guild_list = [guild for guild in working_list if guild['gvgtimetype'] == time_type_tuple[0]]
+            matches = self._initial_gc_prediction(ts_guild_list)
+            match_list.extend(matches)
+
+        # Update the db with the matched pairs
+        insert_gc_matches = insert(self.match_table)
+        update_gc_matches = {col.name: col for col in insert_gc_matches.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
+        update_statement = insert_gc_matches.on_conflict_do_update(
+            index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
+            set_=update_gc_matches
+        )
+        with self.engine.connect() as conn:
+            conn.execute(update_statement, match_list)
+            conn.commit()
+
+        log.info('Day 1 matches update complete')
+
+    def _general_gc_update(self, gc_num, day, timeslot, predict=True):
+        try:
+            log.info('Updating GC ' + gc_num + ' ranks for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+            # Get the guild rank data in specified timeslot and insert to database
+            self._update_gc_ranks(gc_num, day, timeslot)
+            log.info('Update Complete')
+
+
+            log.info('Run GC matchmaking: ' + str(predict))
+
+            # Check if matching function needs to be run
+            if predict == True:
+                # Run the matching function (Gets data from database)
+                self._general_matchmaking(gc_num, day, timeslot)
+        except Exception as Argument:
+            log.exception('General GC update failed.')
+
+    def _general_matchmaking(self, gc_num, day, timeslot):
+        log.info('Running general matchmaking function for GC ' + gc_num + ', predicting day ' + str(day + 1) + ' matches for timeslot: ' + str(timeslot))
+        matched_list = []
+        match_dict = {}
+        predicted_match_list = []
+        time_type = (2 ** (timeslot - 1))
+
+        # Get gc data for day and timeslot (For predicting the following day)
+        get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day)
+
+        # Get the current match list from db
+        get_gc_matches_statement = select(self.formatted_match_table).where(self.formatted_match_table.c.gvgeventid == gc_num, self.formatted_match_table.c.gvgtimetype == time_type)
+
+        # Execute statements
+        with self.engine.connect() as conn:
+            ranking_tuple_list =  conn.execute(get_gc_data_statement).all()
+            match_tuple_list = conn.execute(get_gc_matches_statement).all()
+            conn.commit()
+
+        # Convert match list to dict containing array of guilds fought
+        for row in match_tuple_list:
+            match_list = []
+            # Tuple index 4 onwards contains matches from day 1 onwards (Using indexes in case days increase)
+            # Only add up to the current day (If GC data is prefilled past the current day, there may be unexpected results)
+            for index in range(4, 4 + day):
+                # Add the guild's previously fought to the guilds matched list
+                match_list.append(row[index])
+                
+            match_dict[row[3]] = match_list
+
+        # Sort the rank list by points
+        ranking_tuple_list.sort(key=lambda tup: tup[2], reverse=True)  # sorts in place
+
+        # Iterate through the gc rank list
+        for index, (gvgeventid, guilddataid, point) in enumerate(ranking_tuple_list):
+            orig_index = index
+            # Check if in the already matched list (for the day)
+            if (guilddataid not in matched_list):
+                # Loop until the guild is matched with another guild, or if at end of list (Might leave out a guild)
+                while (guilddataid not in matched_list and index + 1 < len(ranking_tuple_list)):
+                    # Increment to get next guild in rankings
+                    index = index + 1
+                    # The matched guild must not have been fought this GC, and must not have been matched with another guild already for the day
+                    if (ranking_tuple_list[index][1] not in match_dict[guilddataid] and ranking_tuple_list[index][1] not in matched_list):
+                        # Have not fought before. Valid match
+                        # Add to match list
+                        new_match = {
+                            'gcday': day + 1,
+                            'gvgeventid': gvgeventid,
+                            'guilddataid': guilddataid,
+                            'opponentguilddataid': ranking_tuple_list[index][1]
+                        }
+
+                        alt_match = {
+                            'gcday': day + 1,
+                            'gvgeventid': gvgeventid,
+                            'opponentguilddataid': guilddataid,
+                            'guilddataid': ranking_tuple_list[index][1]
+                        }
+
+
+                        predicted_match_list.append(new_match)
+                        predicted_match_list.append(alt_match)
+
+                        # Add both guild ids to the matched list to exit loop
+                        matched_list.append(guilddataid)
+                        matched_list.append(ranking_tuple_list[index][1])
+
+                # On exit of while loop, check if the index is at last element of list
+                if index == len(ranking_tuple_list) - 1 and guilddataid not in matched_list:
+                    # If at last element of list, and current guild not matched, set guild to match with None
+                    new_match = {
+                        'gcday': day + 1,
+                        'gvgeventid': gvgeventid,
+                        'guilddataid': guilddataid,
+                        'opponentguilddataid': None
+                    }
+                    predicted_match_list.append(new_match)
+                    matched_list.append(guilddataid)
+        
+        # Insert new predicted matches into database
+        insert_gc_matches = insert(self.match_table).values(predicted_match_list)
+        update_gc_matches = {col.name: col for col in insert_gc_matches.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
+        update_statement = insert_gc_matches.on_conflict_do_update(
+            index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
+            set_=update_gc_matches
+        )
+
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+
+        log.info('General matchmaking complete')
