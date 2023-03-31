@@ -116,10 +116,9 @@ class DatabaseUpdater():
 
     def run(self):
         # Shedule to run the update task every day, 5 min after reset?? Time zone check?
-        self.sched.add_job(self._daily_update, 'cron', hour=5, minute=5)
+        self.sched.add_job(self._daily_update, 'cron', hour=5, minute=3)
+        log.info('DatabaseUpdater starting...')
         self.sched.start()
-
-        log.info('DatabaseUpdater running...')
 
     def _update_guilds_table(self, guild_list):
         log.info('Guild table update starting...')
@@ -263,49 +262,20 @@ class DatabaseUpdater():
         )
 
         with self.engine.connect() as conn:
+            log.info('Inserting base player data into DB...')
             conn.execute(update_statement)
             conn.commit()
+            log.info('Insert Successful')
+            log.info('Inserting extra player data into DB...')
             conn.execute(update_statement2)
             conn.commit()
+            log.info('Insert Successful')
 
         log.info('Player table update complete')
 
-    def _full_gc_rank_update(self, day=None):
-        log.info('Full GC rank update starting...')
-        gc_api = GranColoAPI()
-
-        # Get the rank list of the time slot
-        full_rank_list = gc_api.get_full_rank_list()
-
+    def _insert_gc_data_db(self, gc_data):
         converted_data = []
-        for data in full_rank_list:
-            new_data =  {k.lower(): v for k, v in data.items()}
-            if day is not None:
-                new_data['gcday'] = day
-            converted_data.append(new_data)
-
-        # Insert into database 
-        insert_gc_ranks = insert(self.gc_data_table)
-        update_gc_ranks = {col.name: col for col in insert_gc_ranks.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
-        update_statement = insert_gc_ranks.on_conflict_do_update(
-            index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
-            set_=update_gc_ranks
-        )
-        with self.engine.connect() as conn:
-            conn.execute(update_statement, converted_data)
-            conn.commit()
-
-        log.info('Full GC rank update complete')
-
-    def _update_gc_ranks(self, gc_num, day, timeslot):
-        log.info('GC ' + str(gc_num) + ' , day ' + str(day) + ' rank update for timeslot: ' + str(timeslot) + ' starting...')
-        gc_api = GranColoAPI()
-
-        # Get the rank list of the time slot
-        timeslot_rank_list = gc_api.get_ts_rank_list(timeslot)
-
-        converted_data = []
-        for data in timeslot_rank_list:
+        for data in gc_data:
             new_data =  {k.lower(): v for k, v in data.items()}
             new_data['gcday'] = day
             converted_data.append(new_data)
@@ -317,9 +287,36 @@ class DatabaseUpdater():
             index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
             set_=update_gc_ranks
         )
+
+        log.info('Inserting GC data...')
         with self.engine.connect() as conn:
             conn.execute(update_statement)
             conn.commit()
+        log.info('Inserting successful')
+
+    def _full_gc_rank_update(self, day=None):
+        log.info('Full GC rank update starting...')
+        gc_api = GranColoAPI()
+
+        # Get the rank list of the time slot
+        log.info('Retrieving full GC rank list using API...')
+        full_rank_list = gc_api.get_full_rank_list()
+        log.info('Retrieval successful')
+
+        self._insert_gc_data_db(full_rank_list)
+
+        log.info('Full GC rank update complete')
+
+    def _update_gc_ranks(self, gc_num, day, timeslot):
+        log.info('GC ' + str(gc_num) + ' , day ' + str(day) + ' rank update for timeslot: ' + str(timeslot) + ' starting...')
+        gc_api = GranColoAPI()
+
+        # Get the rank list of the time slot
+        log.info('Getting rank list of TS ' + str(timeslot) + ' using API...')
+        timeslot_rank_list = gc_api.get_ts_rank_list(timeslot)
+        log.info('Retrieval successful')
+
+        self._insert_gc_data_db(timeslot_rank_list)
         
 
     def _daily_update(self):
@@ -347,6 +344,7 @@ class DatabaseUpdater():
             gc_dates = notices_parser.get_gc_dates()
 
             if gc_dates != None:
+                log.info('GC dates found: ' + str(gc_dates))
                 # Check if today is before prelim date
                 if datetime.utcnow() < gc_dates['prelims']['start']:
                     # Run the function to schedule gc ranking updates
@@ -414,10 +412,14 @@ class DatabaseUpdater():
         )
 
         with self.engine.connect() as conn:
+            log.info('Inserting GC prelim dates into DB...')
             conn.execute(update_statement)
+            log.info('Insert successful')
             conn.commit()
+            log.info('Inserting GC finals dates into DB...')
             conn.execute(update_finals_statement)
             conn.commit()
+            log.info('Insert successful')
 
 
     def _get_guild_ids(self):
@@ -532,9 +534,9 @@ class DatabaseUpdater():
             ts_list = conn.execute(get_ts_list).all()
             conn.commit()
 
-        log.info('Rank updates for day 2 complete')
+        log.info('Day 2 full rank update complete (Reset time)')
 
-        log.info('Starting GC match predictions...')
+        log.info('Starting GC match predictions for day 2...')
         for ts, in ts_list: 
             # Update ever ts in gc
             self._general_matchmaking(gc_num, 1, ts)
@@ -645,15 +647,18 @@ class DatabaseUpdater():
             index_elements=['gcday', 'gvgeventid', 'guilddataid'], 
             set_=update_gc_matches
         )
+
+        log.info('Inserting day 1 GC matches into DB')
         with self.engine.connect() as conn:
             conn.execute(update_statement, match_list)
             conn.commit()
+        log.info('Insert successful')
 
         log.info('Day 1 matches update complete')
 
     def _general_gc_update(self, gc_num, day, timeslot, predict=True):
         try:
-            log.info('Updating GC ' + gc_num + ' ranks for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+            log.info('Updating GC ' + str(gc_num) + ' ranks for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
             # Get the guild rank data in specified timeslot and insert to database
             self._update_gc_ranks(gc_num, day, timeslot)
             log.info('Update Complete')
@@ -669,7 +674,7 @@ class DatabaseUpdater():
             log.exception('General GC update failed.')
 
     def _general_matchmaking(self, gc_num, day, timeslot):
-        log.info('Running general matchmaking function for GC ' + gc_num + ', predicting day ' + str(day + 1) + ' matches for timeslot: ' + str(timeslot))
+        log.info('Running general matchmaking function for GC ' + str(gc_num) + ', predicting day ' + str(day + 1) + ' matches for timeslot: ' + str(timeslot))
         matched_list = []
         match_dict = {}
         predicted_match_list = []
@@ -756,8 +761,10 @@ class DatabaseUpdater():
             set_=update_gc_matches
         )
 
+        log.info('Inserting new predicted matches into DB...')
         with self.engine.connect() as conn:
             conn.execute(update_statement)
             conn.commit()
+        log.info('Insert successful')
 
         log.info('General matchmaking complete')
