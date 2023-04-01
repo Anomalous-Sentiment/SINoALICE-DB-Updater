@@ -18,6 +18,8 @@ DROP TABLE IF EXISTS gc_events;
 CREATE TABLE gc_events
 (
     gvgEventId SMALLINT,
+    entry_start TIMESTAMPTZ,
+    entry_end TIMESTAMPTZ,
     prelim_start TIMESTAMPTZ,
     prelim_end TIMESTAMPTZ,
     PRIMARY KEY (gvgEventId)

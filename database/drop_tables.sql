@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS player_activity;
 DROP TABLE IF EXISTS gc_predictions;
 DROP TABLE IF EXISTS temp;
 DROP TABLE IF EXISTS gc_data;
