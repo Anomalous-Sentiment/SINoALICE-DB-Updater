@@ -6,13 +6,13 @@ from sqlalchemy import create_engine, Table, MetaData, select
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, time
 from apscheduler.schedulers.background import BlockingScheduler
 import os
 from pytz import utc
 import itertools
 import json
-import time
+import time as other_time
 import logging
 import socket
 from logging.handlers import SysLogHandler
@@ -30,7 +30,7 @@ class ContextFilter(logging.Filter):
 syslog = SysLogHandler(address=((os.getenv('LOGGING_URL'), int((os.getenv('LOGGING_PORT'))))))
 syslog.addFilter(ContextFilter())
 
-logging.Formatter.converter = time.gmtime
+logging.Formatter.converter = other_time.gmtime
 formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 syslog.setFormatter(formatter)
 
@@ -395,8 +395,8 @@ class DatabaseUpdater():
                 'gvgeventid': gc_num,
                 'entry_start': gc_date_dict['entry']['start'].isoformat(),
                 'entry_end': gc_date_dict['entry']['end'].isoformat(),
-                'prelim_start': gc_date_dict['prelim']['start'].isoformat(),
-                'prelim_end': gc_date_dict['prelim']['end'].isoformat()
+                'prelim_start': gc_date_dict['prelims']['start'].isoformat(),
+                'prelim_end': gc_date_dict['prelims']['end'].isoformat()
             }
         ]
 
@@ -426,8 +426,8 @@ class DatabaseUpdater():
         gc_finals_data_stmt = insert(self.gc_finals_table).values(finals_data)
         update_gc_finals = {col.name: col for col in gc_finals_data_stmt.excluded if col.name not in ('gvgeventid')}
         update_finals_statement = gc_finals_data_stmt.on_conflict_do_update(
-            index_elements=['gvgeventid'], 
-            set_=update_finals_statement
+            index_elements=['gvgeventid', 'finals_group'], 
+            set_=update_gc_finals
         )
 
         with self.engine.connect() as conn:
@@ -523,15 +523,15 @@ class DatabaseUpdater():
                     # Calculate the time to run the update
 
                     # Check if time earlier than reset time (5 AM UTC)
-                    if utc_time < datetime.time(5, 00, 00):
+                    if utc_time < time(hour=5, minute=00, second=00, tzinfo=utc):
                         # If earlier, increase the day by 1 (Because GC only starts after reset)
                         update_datetime = start_date + timedelta(days=day + 1)
-                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 23, second=utc_time.second)
                     else:                            
                         # Else, do not modify day value
                         update_datetime = start_date + timedelta(days=day)
                         # Set the hours and minute where the colo ends + 3 min
-                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + timedelta(minutes=23), second=utc_time.second)
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 23, second=utc_time.second)
 
                     # Check if current day is before final day
                     if day < prelim_days:
@@ -543,7 +543,7 @@ class DatabaseUpdater():
                     new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict])
                     self.job_list.append(new_job)
 
-                    log.info('Update Scheduled for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+                    log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
         except:
             tb = traceback.format_exc()
             log_exception('Failed to schedule GC updates', tb)
