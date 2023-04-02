@@ -275,7 +275,7 @@ class DatabaseUpdater():
         with self.engine.connect() as conn:
             log.info('Inserting base player data into DB...')
             batch_size = 5000
-            total_batches = math.ceil(len(converted_base_player_list) / batch_size) + 1
+            total_batches = math.ceil(len(converted_base_player_list) / batch_size)
 
             # Break data into chunks to avoid timeout when doing all at once
             for batch_num, batch in enumerate(self._chunks(converted_base_player_list, batch_size)):
@@ -291,7 +291,7 @@ class DatabaseUpdater():
             log.info('Insert Successful')
 
             log.info('Inserting extra player data into DB...')
-            total_batches = math.ceil(len(converted_player_list) / batch_size) + 1
+            total_batches = math.ceil(len(converted_player_list) / batch_size)
 
             # Break data into chunks to avoid timeout when doing all at once
             for batch_num, batch in enumerate(self._chunks(converted_player_list, batch_size)):
