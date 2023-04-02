@@ -9,8 +9,8 @@ COPY DatabaseUpdater.py .
 COPY requirements.txt .
 COPY start_updater.py .
 
-COPY docker-entrypoint .
-RUN chmod +x docker-entrypoint
+COPY docker-entrypoint.sh .
+RUN chmod +x docker-entrypoint.sh
 #RUN pip install --upgrade pip
 
 # Install deps
@@ -19,6 +19,6 @@ RUN pip install -r ./sinoalice/requirements.txt
 RUN pip install -r requirements.txt
 
 #CMD ["python", "start_updater.py"]
-CMD ["sh", "docker-entrypoint"]
+CMD ["sh", "docker-entrypoint.sh"]
 
 #CMD if [[ ! -z "$SWAP" ]]; then fallocate -l $(($(stat -f -c "(%a*%s/10)*7" .))) _swapfile && mkswap _swapfile && swapon _swapfile && ls -hla; fi; free -m; python start_updater.py
