@@ -17,6 +17,7 @@ import logging
 import socket
 from logging.handlers import SysLogHandler
 import traceback
+import math
 load_dotenv()
 
 
@@ -200,8 +201,9 @@ class DatabaseUpdater():
         extra_player_data_columns =  list(filter(lambda col: col != 'updated_at', extra_player_data_columns))
 
         # Get the players in guilds
+        log.info('Getting guild player data (extra data)...')
         player_list = player_api.get_players_in_guilds(guild_list=guild_list)
-
+        log.info('Guild player data retrieval successful')
         # Get player ids from db
         db_player_id_list = self._get_player_ids_from_db()
 
@@ -212,8 +214,9 @@ class DatabaseUpdater():
             player_id_set.add(player_data['userData']['userId'])
 
         # Get the list of basic player info using player ids
+        log.info('Getting player profile data (Base player data)...')
         base_player_list = player_api.get_basic_player_info(list(player_id_set))
-
+        log.info('Player profile data retrieval successful')
 
         #with open(f'new_base_player_list.json', 'r') as f:
         #    base_player_list = json.load(f)
@@ -268,31 +271,50 @@ class DatabaseUpdater():
 
             converted_player_list.append(player)
 
-        insert_base_player_stmt = insert(self.player_data_table).values(converted_base_player_list)
-        update_columns = {col.name: col for col in insert_base_player_stmt.excluded if col.name not in ('userid')}
-        update_statement = insert_base_player_stmt.on_conflict_do_update(
-            index_elements=['userid'], 
-            set_=update_columns
-        )
-
-        insert_stmt2 = insert(self.extra_player_data_table).values(converted_player_list)
-        update_columns2 = {col.name: col for col in insert_stmt2.excluded if col.name not in ('userid')}
-        update_statement2 = insert_stmt2.on_conflict_do_update(
-            index_elements=['userid'], 
-            set_=update_columns2
-        )
 
         with self.engine.connect() as conn:
             log.info('Inserting base player data into DB...')
-            conn.execute(update_statement)
-            conn.commit()
+            batch_size = 5000
+            total_batches = math.ceil(len(converted_base_player_list) / batch_size) + 1
+
+            # Break data into chunks to avoid timeout when doing all at once
+            for batch_num, batch in enumerate(self._chunks(converted_base_player_list, batch_size)):
+                log.info(f'Inserting batch {batch_num + 1} of {total_batches}')
+                insert_base_player_stmt = insert(self.player_data_table).values(batch)
+                update_columns = {col.name: col for col in insert_base_player_stmt.excluded if col.name not in ('userid')}
+                update_statement = insert_base_player_stmt.on_conflict_do_update(
+                    index_elements=['userid'], 
+                    set_=update_columns
+                )
+                conn.execute(update_statement)
+                conn.commit()
             log.info('Insert Successful')
+
             log.info('Inserting extra player data into DB...')
-            conn.execute(update_statement2)
-            conn.commit()
+            total_batches = math.ceil(len(converted_player_list) / batch_size) + 1
+
+            # Break data into chunks to avoid timeout when doing all at once
+            for batch_num, batch in enumerate(self._chunks(converted_player_list, batch_size)):
+                log.info(f'Inserting batch {batch_num + 1} of {total_batches}')
+                insert_stmt2 = insert(self.extra_player_data_table).values(batch)
+                update_columns2 = {col.name: col for col in insert_stmt2.excluded if col.name not in ('userid')}
+                update_statement2 = insert_stmt2.on_conflict_do_update(
+                    index_elements=['userid'], 
+                    set_=update_columns2
+                )
+                conn.execute(update_statement2)
+                conn.commit()
+
             log.info('Insert Successful')
 
         log.info('Player table update complete')
+
+
+     # From stack overflow. 
+    def _chunks(self, lst, n):
+        """Yield successive n-sized chunks from lst."""
+        for i in range(0, len(lst), n):
+            yield lst[i:i + n] 
 
     def _insert_gc_data_db(self, gc_data):
         converted_data = []
