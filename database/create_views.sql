@@ -67,7 +67,7 @@ CREATE OR REPLACE FUNCTION update_player_activity() RETURNS TRIGGER AS $activity
                             (SELECT MIN(lastAccessTime)::DATE FROM extra_player_data) + ((n+1) || ' days')::interval end_time
                         from generate_series(0, ((select NOW()::date - min(lastAccessTime)::date from extra_player_data)), 1) n
                     )
-                    SELECT CURRENT_DATE AS curr_date, d.start_time ::TEXT, COUNT(ex.userId)
+                    SELECT CURRENT_DATE, d.start_time ::TEXT, COUNT(ex.userId)
                     FROM extra_player_data ex
                     RIGHT JOIN day_intervals d
                         ON ex.lastAccessTime::DATE >= d.start_time
@@ -101,7 +101,7 @@ CREATE OR REPLACE FUNCTION update_player_activity() RETURNS TRIGGER AS $activity
                     ORDER BY 1 DESC
                 $$
             ) AS ct("curr_date" DATE, "since_1_day" INTEGER, "since_3_days" INTEGER, "since_5_days" INTEGER, "since_7_days" INTEGER, "since_14_days" INT)
-            ON CONFLICT (curr_date) DO UPDATE SET 
+            ON CONFLICT (snapshot_date) DO UPDATE SET 
             logged_within_1_day = EXCLUDED.logged_within_1_day,
             logged_within_3_days = EXCLUDED.logged_within_3_days,
             logged_within_5_days = EXCLUDED.logged_within_5_days,
@@ -124,3 +124,27 @@ CREATE TRIGGER player_data_upd
     AFTER UPDATE ON extra_player_data
     REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
     FOR EACH STATEMENT EXECUTE FUNCTION update_player_activity();
+
+DROP VIEW IF EXISTS human_guild_list;
+CREATE OR REPLACE VIEW human_guild_list AS
+SELECT 
+    gld.guilddataid AS "Guild ID",
+    gld.guildname AS "Guild",
+    gld.mastername AS "Guild Master",
+    ts.timeslot AS "Timeslot",
+    rks.rank_letter AS "Rank",
+    gld.ranking AS "Overall Rank",
+    gld.gvgwin AS "Wins",
+    gld.gvglose AS "Losses",
+    gld.gvgdraw AS "Draws",
+    COUNT(players.userid) AS "Members",
+    SUM(players.totalpower) AS "Total Estimated CP",
+    AVG(players.totalpower) AS "Average Member CP",
+    PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower) AS "Median Member CP"
+FROM base_player_data players
+INNER JOIN guilds gld USING (guilddataid)
+INNER JOIN guild_ranks rks USING (guildrank)
+INNER JOIN timeslots ts USING (gvgtimetype)
+WHERE gld.ranking > 0
+GROUP BY gld.guilddataid, rks.rank_letter, gld.mastername, ts.gvgtimetype
+ORDER BY gld.ranking ASC;
