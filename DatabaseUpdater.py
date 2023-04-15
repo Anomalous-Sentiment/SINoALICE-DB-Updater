@@ -137,7 +137,10 @@ class DatabaseUpdater():
         log.info('DatabaseUpdater Initialised')
 
     def run(self):
-        # Shedule to run the update task every day, 5 min after reset?? Time zone check?
+        # Run daily update once on start
+        self._daily_update()
+
+        # Shedule to run the update task every day, 31 min after reset
         self.sched.add_job(self._daily_update, 'cron', hour=5, minute=31)
         log.info('DatabaseUpdater starting...')
         self.sched.start()
@@ -533,8 +536,11 @@ class DatabaseUpdater():
             # Update db with GC dates
             self._update_db_gc_dates(curr_gc, date_dict)
 
+            # Initialise the day 0 guild list
+            self._init_day_0_gc_list(curr_gc)
+
             # Schedule the initial gc rank update on day 2, 1 min after reset
-            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=1)), args=[curr_gc])
+            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=1)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
             self.job_list.append(day_2_job)
 
             gc_timeslots = self._get_gc_timeslots()
@@ -562,7 +568,7 @@ class DatabaseUpdater():
                         predict = False
 
                     # Schedule update job and add to list. The day is increased by 1, to make it indexed by 1, so 0 idx is day 1
-                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict])
+                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict], id=f'day_{day}_ts_{timeslot}_update')
                     self.job_list.append(new_job)
 
                     log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
@@ -821,3 +827,41 @@ class DatabaseUpdater():
         log.info('Insert successful')
 
         log.info('General matchmaking complete')
+
+    def _init_day_0_gc_list(self, gc_num):
+        day_0_list = []
+
+        log.info('Getting guild list from DB...')
+        # Get full list of guilds from db
+        select_guilds_stmt = select(self.guild_table.c.guilddataid, self.guild_table.c.gvgtimetype, self.guild_table.c.ranking)
+
+        with self.engine.connect() as conn:
+            guild_list = conn.execute(select_guilds_stmt).all()
+            conn.commit()
+        log.info('Retrieval successful')
+
+        for guild_data_id, gvg_time_type, ranking in guild_list:
+            # Convert to list of dicts with gc number included
+            guild_dict = {
+                'guilddataid': guild_data_id,
+                'gvgeventid': gc_num,
+                'gvgtimetype': gvg_time_type,
+                'ranking': ranking
+            }
+
+            day_0_list.append(guild_dict)
+
+
+        # Insert the list into the temp/day 0 table
+        insert_day_0 = insert(self.day_0_table).values(day_0_list)
+        update_day_0 = {col.name: col for col in insert_day_0.excluded if col.name not in ('guilddataid')}
+        update_statement = insert_day_0.on_conflict_do_update(
+            index_elements=['guilddataid'], 
+            set_=update_day_0
+        )
+
+        log.info('Inserting day 0 guilds into DB...')
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+        log.info('Insert successful')
