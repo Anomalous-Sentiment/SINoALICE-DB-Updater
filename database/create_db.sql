@@ -281,3 +281,14 @@ CREATE TABLE player_activity
     updated_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
     PRIMARY KEY (snapshot_date)
 );
+
+DROP TABLE IF EXISTS users;
+CREATE TABLE users
+(
+    id VARCHAR(18),
+    username VARCHAR(32),
+    discriminator VARCHAR(4),
+    allowed BOOLEAN NOT NULL DEFAULT (TRUE),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+    PRIMARY KEY(id)
+)

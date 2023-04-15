@@ -138,9 +138,12 @@ SELECT
     gld.gvglose AS "Losses",
     gld.gvgdraw AS "Draws",
     COUNT(players.userid) AS "Members",
+    SUM(players.maxhp) AS "Total HP",
+    ROUND(AVG(players.maxhp)) AS "Average Member HP",
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.maxhp)) AS "Median Member HP",
     SUM(players.totalpower) AS "Total Estimated CP",
-    AVG(players.totalpower) AS "Average Member CP",
-    PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower) AS "Median Member CP"
+    ROUND(AVG(players.totalpower)) AS "Average Member CP",
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower)) AS "Median Member CP"
 FROM base_player_data players
 INNER JOIN guilds gld USING (guilddataid)
 INNER JOIN guild_ranks rks USING (guildrank)
