@@ -660,7 +660,7 @@ class DatabaseUpdater():
 
         # Get the day 0 rank list (pre-day 1)
         day_0_guild_list = []
-        day_0_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype)
+        day_0_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype).where(self.day_0_table.c.gvgeventid == gc_num)
 
         # Get time slots participating in GC
         ts_statement = select(self.timeslot_table.c.gvgtimetype).where(self.timeslot_table.c.gc_available == True)
@@ -673,7 +673,7 @@ class DatabaseUpdater():
 
         id_list = []
         for guild in day_1_guild_list:
-            # Add only the guilddataid to new list. New list contains all guilddataids that are in the specified time slot
+            # Add only the guilddataid to new list. New list contains all guilddataids that are in the specified GC
             id_list.append(guild[0])
 
         # Filter out the guilds that were not in day 1 (Not participating in GC)
