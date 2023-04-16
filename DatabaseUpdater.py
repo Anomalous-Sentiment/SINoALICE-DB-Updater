@@ -516,10 +516,6 @@ class DatabaseUpdater():
                 (13, timedelta(hours=9)),
             ]
 
-            # Remove all previously scheduled gc updates
-            for job in self.job_list:
-                job.remove()
-
             # Use the first month of gc to calculate the current GC number
             # This assumes that a GC occurs every month, and only once every month. This will become inaccurate otherwise
             first_gc_month = datetime(2020, 8, 1)
@@ -534,8 +530,13 @@ class DatabaseUpdater():
             # Update db with GC dates
             self._update_db_gc_dates(curr_gc, date_dict)
 
-            # Initialise the day 0 guild list
-            self._init_day_0_gc_list(curr_gc)
+            # Initialise the day 0 guild list if current date is after start date (day 1), but before second day of GC. In other words, if it is the first day of GC
+            if datetime.utcnow() > start_date and datetime.utcnow() < start_date + timedelta(days=1):
+                self._init_day_0_gc_list(curr_gc)
+
+            # Remove all previously scheduled gc updates
+            for job in self.job_list:
+                job.remove()
 
             # Schedule the initial gc rank update on day 2, 1 min after reset
             day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=1)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
