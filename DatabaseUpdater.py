@@ -391,10 +391,8 @@ class DatabaseUpdater():
 
             if gc_dates != None:
                 log.info('GC dates found: ' + str(gc_dates))
-                # Check if today is before prelim date
-                if datetime.utcnow() < gc_dates['prelims']['start']:
-                    # Run the function to schedule gc ranking updates
-                    self._schedule_gc_updates(gc_dates)
+                # Run the function to schedule gc ranking updates
+                self._schedule_gc_updates(gc_dates)
 
             log.info('Daily update complete')
         except:
@@ -567,11 +565,13 @@ class DatabaseUpdater():
                     else:
                         predict = False
 
-                    # Schedule update job and add to list. The day is increased by 1, to make it indexed by 1, so 0 idx is day 1
-                    new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict], id=f'day_{day}_ts_{timeslot}_update')
-                    self.job_list.append(new_job)
+                    # Check if update time is after current date. Only add to scheduler if after current timedate
+                    if datetime.utcnow() < update_datetime:
+                        # Schedule update job and add to list. The day is increased by 1, to make it indexed by 1, so 0 idx is day 1
+                        new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict], id=f'day_{day}_ts_{timeslot}_update')
+                        self.job_list.append(new_job)
 
-                    log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+                        log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
         except:
             tb = traceback.format_exc()
             log_exception('Failed to schedule GC updates', tb)
