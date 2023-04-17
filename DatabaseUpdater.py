@@ -192,40 +192,44 @@ class DatabaseUpdater():
 
         log.info('Guild table update complete')
 
-    def _update_players(self, guild_list):
-        log.info('Player table update starting...')
-        converted_player_list = []
+    def _update_guild_gm_data(self, guild_list):
+        # Function for updating the GM data of the guild list passed in (For when we do not need to update the entire player table. This is for maintaining referential integrity)
+
+        # Add only the IDs to the table first (Not all player profile pages can be accessed in the API for some reason. This way we can get the IDs in at least if nothing else)
+        pure_id_list = []
+        for guild in guild_list:
+            new_row = {
+                'userid': guild['guildMasterUserId']
+            }
+            pure_id_list.append(new_row)
+
+        #log.info(f'Inserting GM ID list of length:{len(pure_id_list)} into base player data...')
+        #self._insert_base_player_data_db(pure_id_list)
+        #log.info('Insert successful')
+
+        gm_id_list = []
+        for guild in guild_list:
+            # Add ever guild gm id to list
+            gm_id_list.append(guild['guildMasterUserId'])
+
+        # Get the data
         player_api = PlayerAPI()
-        table_cols = self.metadata.tables['extra_player_data']
+        gm_data_list = player_api.get_selected_player_data(gm_id_list)
+
+        # Process the data
+        gm_data_list = self._process_base_player_data(gm_data_list)
+        log.info(f'gc_data_list length:{len(gm_data_list)}')
+
+        # Insert into db
+        self._insert_base_player_data_db(gm_data_list)
+
+
+    def _process_base_player_data(self, base_player_list):
+        log.info('Processing player data...')
+        converted_player_list = []
         base_table_cols = self.metadata.tables['base_player_data']
         base_player_data_columns = [column.key for column in base_table_cols.columns]
         base_player_data_columns =  list(filter(lambda col: col != 'updated_at', base_player_data_columns))
-        extra_player_data_columns = [column.key for column in table_cols.columns]
-        extra_player_data_columns =  list(filter(lambda col: col != 'updated_at', extra_player_data_columns))
-
-        # Get the players in guilds
-        log.info('Getting guild player data (extra data)...')
-        player_list = player_api.get_players_in_guilds(guild_list=guild_list)
-        log.info('Guild player data retrieval successful')
-        # Get player ids from db
-        db_player_id_list = self._get_player_ids_from_db()
-
-        player_id_set = set(db_player_id_list)
-
-        # Add player ids from api to ids from db if unique using unique properties of set
-        for player_data in player_list:
-            player_id_set.add(player_data['userData']['userId'])
-
-        # Get the list of basic player info using player ids
-        log.info('Getting player profile data (Base player data)...')
-        base_player_list = player_api.get_basic_player_info(list(player_id_set))
-        log.info('Player profile data retrieval successful')
-
-        #with open(f'new_base_player_list.json', 'r') as f:
-        #    base_player_list = json.load(f)
-            
-        #with open(f'new_extra_player_list.json', 'r') as f:
-        #    player_list = json.load(f)
 
         converted_base_player_list = []
         for base_player in base_player_list:
@@ -244,6 +248,15 @@ class DatabaseUpdater():
                     del player[key]
 
             converted_base_player_list.append(player)
+
+        return converted_base_player_list
+
+    def _process_extra_player_data(self, player_list):
+        log.info('Processing extra player data...')
+        converted_player_list = []
+        table_cols = self.metadata.tables['extra_player_data']
+        extra_player_data_columns = [column.key for column in table_cols.columns]
+        extra_player_data_columns =  list(filter(lambda col: col != 'updated_at', extra_player_data_columns))
 
 
         # Convert data for insertion into db
@@ -273,8 +286,46 @@ class DatabaseUpdater():
                     del player[key]
 
             converted_player_list.append(player)
+        return converted_player_list
+
+    def _update_players(self, guild_list):
+        log.info('Player table update starting...')
+        converted_player_list = []
+        player_api = PlayerAPI()
+
+        # Get the players in guilds
+        log.info('Getting guild player data (extra data)...')
+        player_list = player_api.get_players_in_guilds(guild_list=guild_list)
+        log.info('Guild player data retrieval successful')
+
+        # Get player ids from db
+        db_player_id_list = self._get_player_ids_from_db()
+
+        player_id_set = set(db_player_id_list)
+
+        # Add player ids from api to ids from db if unique using unique properties of set
+        for player_data in player_list:
+            player_id_set.add(player_data['userData']['userId'])
+
+        # Get the list of basic player info using player ids
+        log.info('Getting player profile data (Base player data)...')
+        base_player_list = player_api.get_basic_player_info(list(player_id_set))
+        log.info('Player profile data retrieval successful')
+
+        # Convert data into form suitable for database
+        converted_base_player_list = self._process_base_player_data(base_player_list)
 
 
+        # convert extra player data into form suitable for db
+        converted_player_list = self._process_extra_player_data(player_list)
+
+        self._insert_base_player_data_db(converted_base_player_list)
+        self._insert_extra_player_data(converted_player_list)
+
+        log.info('Player table update complete')
+
+
+    def _insert_base_player_data_db(self, converted_base_player_list):
         with self.engine.connect() as conn:
             log.info('Inserting base player data into DB...')
             batch_size = 5000
@@ -293,6 +344,11 @@ class DatabaseUpdater():
                 conn.commit()
             log.info('Insert Successful')
 
+
+    def _insert_extra_player_data(self, converted_player_list):
+        with self.engine.connect() as conn:
+            batch_size = 5000
+
             log.info('Inserting extra player data into DB...')
             total_batches = math.ceil(len(converted_player_list) / batch_size)
 
@@ -309,9 +365,6 @@ class DatabaseUpdater():
                 conn.commit()
 
             log.info('Insert Successful')
-
-        log.info('Player table update complete')
-
 
      # From stack overflow. 
     def _chunks(self, lst, n):
@@ -368,21 +421,22 @@ class DatabaseUpdater():
         # Get the rank list of the time slot
         log.info('Retrieving full GC rank list using API...')
         full_rank_list = gc_api.get_full_rank_list() 
-        log.info('Retrieval successful')
+        log.info(f'Retrieval successful, length:{len(full_rank_list)}')
 
 
-        log.info('Updating player data of guilds participating in GC...')
+        log.info('Updating GM player data of guilds participating in GC...')
         # Update the player data of guilds participating in GC
         # Needed or we risk having a guild master who does not exist in the base player table (Foreign key error)
-        self._update_players(full_rank_list)
-        log.info('Player data update complete')
+        #self._update_players(full_rank_list)
+        self._update_guild_gm_data(full_rank_list)
+        log.info('GM data update complete')
 
         # Update the guild data
-        log.info('Updating guild data of guilds participating in GC...')
-        guild_api = GuildAPI()
-        guild_list = guild_api.get_guild_list(full_rank_list)
-        self._update_guilds_table(guild_list)
-        log.info('GC guild data update complete')
+        #log.info('Updating guild data of guilds participating in GC...')
+        #guild_api = GuildAPI()
+        #guild_list = guild_api.get_guild_list(full_rank_list)
+        #self._update_guilds_table(guild_list)
+        #log.info('GC guild data update complete')
 
         self._insert_gc_data_db(full_rank_list, day)
 
