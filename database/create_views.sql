@@ -28,7 +28,7 @@ DROP VIEW IF EXISTS gc_matchups;
 CREATE OR REPLACE VIEW gc_matchups AS
     SELECT * from crosstab(
         $$
-            SELECT ARRAY[base.gvgeventid, base.guilddataid]::text[], base.gvgeventid, base.guilddataid, transition.timeslot, g.guildname, base.gcday, og.guildname
+            SELECT ARRAY[base.gvgeventid, base.guilddataid]::text[], base.gvgeventid, base.guilddataid, transition.timeslot, g.guildname, lf_table.total_lf, base.gcday, og.guildname
             FROM gc_predictions base
             INNER JOIN
             (
@@ -36,6 +36,14 @@ CREATE OR REPLACE VIEW gc_matchups AS
               FROM gc_data gd
               INNER JOIN timeslots t USING (gvgtimetype)
             ) transition USING (guilddataid, gvgeventid)
+            INNER JOIN (
+              SELECT
+                  guilddataid,
+                  gvgeventid,
+                  SUM(point) AS total_lf
+                  FROM gc_data
+                  GROUP BY guilddataid, gvgeventid
+            ) lf_table USING (guilddataid, gvgeventid)
             LEFT JOIN guilds g ON g.guilddataid = base.guilddataid
             LEFT JOIN guilds og ON base.opponentguilddataid = og.guilddataid
             ORDER BY 1,2
@@ -43,7 +51,7 @@ CREATE OR REPLACE VIEW gc_matchups AS
         $$
             SELECT DISTINCT gcday FROM gc_days ORDER BY 1
         $$
-    ) as c(rn TEXT[], gc_num SMALLINT, guild_id INTEGER, timeslot SMALLINT, guild TEXT, day_1 TEXT, day_2 TEXT, day_3 TEXT, day_4 TEXT, day_5 TEXT, day_6 TEXT);
+    ) as c(rn TEXT[], gc_num SMALLINT, guild_id INTEGER, timeslot SMALLINT, guild TEXT, total_lf BIGINT, day_1 TEXT, day_2 TEXT, day_3 TEXT, day_4 TEXT, day_5 TEXT, day_6 TEXT);
 
 -- View to display players logged in since a specified date
 CREATE OR REPLACE VIEW login_activity AS
