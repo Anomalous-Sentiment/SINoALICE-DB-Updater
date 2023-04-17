@@ -22,19 +22,19 @@ CREATE OR REPLACE VIEW gc_matchups_id AS
 
     
     
-
 DROP VIEW IF EXISTS gc_matchups;
 -- View to get table of guild matchups
 CREATE OR REPLACE VIEW gc_matchups AS
     SELECT * from crosstab(
         $$
-            SELECT ARRAY[base.gvgeventid, base.guilddataid]::text[], base.gvgeventid, base.guilddataid, transition.timeslot, g.guildname, transition.point AS "total_lf", base.gcday, og.guildname
+            SELECT ARRAY[base.gvgeventid, base.guilddataid]::text[], base.gvgeventid, base.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
             FROM gc_predictions base
             INNER JOIN
             (
-              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, point 
+              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, MAX(point) AS points
               FROM gc_data gd
               INNER JOIN timeslots t USING (gvgtimetype)
+              GROUP BY gd.guilddataid, gd.gvgeventid, t.timeslot
             ) transition USING (guilddataid, gvgeventid)
             LEFT JOIN guilds g ON g.guilddataid = base.guilddataid
             LEFT JOIN guilds og ON base.opponentguilddataid = og.guilddataid
