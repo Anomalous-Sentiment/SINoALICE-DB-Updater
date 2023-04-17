@@ -17,11 +17,6 @@ class DatabaseGenerator():
             autoload_with=self.engine
         )
 
-        self.player_data_table = Table(
-            'player_data', 
-            self.metadata, 
-            autoload_with=self.engine
-        )
 
         self.gc_data_table = Table(
             'gc_data', 
@@ -35,34 +30,16 @@ class DatabaseGenerator():
             autoload_with=self.engine
         )
 
-        self.day_table = Table(
-            'gc_days', 
-            self.metadata, 
-            autoload_with=self.engine
-        )
-
-        self.timeslot_table = Table(
-            'timeslots', 
-            self.metadata, 
-            autoload_with=self.engine
-        )
         self.match_table = Table(
             'gc_predictions', 
             self.metadata, 
             autoload_with=self.engine
         )
 
-        # This is a view
-        self.formatted_match_table = Table(
-            'gc_matchups_id', 
-            self.metadata, 
-            autoload_with=self.engine
-        )
-        pass
 
-    def regenerate_gc_data(self):
+    def regenerate_gc_data(self, gc_num):
         # Get data from database
-        init_data = self._get_day_0_data()
+        init_data = self._get_day_0_data(gc_num)
 
 
         # Call generator function with data
@@ -96,8 +73,8 @@ class DatabaseGenerator():
 
         return generated_data
 
-    def _get_day_0_data(self):
-        get_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype)
+    def _get_day_0_data(self, gc_num):
+        get_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype).where(self.day_0_table.c.gvgeventid == gc_num)
         
         # Execute command
         with self.engine.connect() as conn:
@@ -106,8 +83,8 @@ class DatabaseGenerator():
 
         return init_data
 
-    def _clear_match_data(self):
-        del_statement = delete(self.match_table).where(self.match_table.c.gvgeventid == 0)
+    def _clear_match_data(self, gc_num):
+        del_statement = delete(self.match_table).where(self.match_table.c.gvgeventid == gc_num)
         
         # Execute command
         with self.engine.connect() as conn:
