@@ -203,17 +203,6 @@ class DatabaseUpdater():
             }
             pure_id_list.append(new_row)
 
-        seen_list = []
-        for guild in guild_list:
-            if guild['guildMasterUserId'] not in seen_list:
-                seen_list.append(guild['guildMasterUserId'])
-            else:
-                log.info(str(guild))
-
-        #log.info(f'Inserting GM ID list of length:{len(pure_id_list)} into base player data...')
-        #self._insert_base_player_data_db(pure_id_list)
-        #log.info('Insert successful')
-
         gm_id_list = []
         for guild in guild_list:
             # Add ever guild gm id to list
