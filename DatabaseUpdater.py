@@ -203,6 +203,13 @@ class DatabaseUpdater():
             }
             pure_id_list.append(new_row)
 
+        seen_list = []
+        for guild in guild_list:
+            if guild['guildMasterUserId'] not in seen_list:
+                seen_list.append(guild['guildMasterUserId'])
+            else:
+                log.info(str(guild))
+
         #log.info(f'Inserting GM ID list of length:{len(pure_id_list)} into base player data...')
         #self._insert_base_player_data_db(pure_id_list)
         #log.info('Insert successful')
@@ -218,7 +225,7 @@ class DatabaseUpdater():
 
         # Process the data
         gm_data_list = self._process_base_player_data(gm_data_list)
-        log.info(f'gc_data_list length:{len(gm_data_list)}')
+        log.info(f'gm_data_list length:{len(gm_data_list)}')
 
         # Insert into db
         self._insert_base_player_data_db(gm_data_list)
@@ -417,29 +424,30 @@ class DatabaseUpdater():
     def _full_gc_rank_update(self, day=None):
         log.info('Full GC rank update starting...')
         gc_api = GranColoAPI()
+        guild_api = GuildAPI()
 
         # Get the rank list of the time slot
         log.info('Retrieving full GC rank list using API...')
         full_rank_list = gc_api.get_full_rank_list() 
-        log.info(f'Retrieval successful, length:{len(full_rank_list)}')
-
+        log.info(f'Retrieval successful, rank list length:{len(full_rank_list)}')
 
         log.info('Updating GM player data of guilds participating in GC...')
         # Update the player data of guilds participating in GC
         # Needed or we risk having a guild master who does not exist in the base player table (Foreign key error)
-        #self._update_players(full_rank_list)
         self._update_guild_gm_data(full_rank_list)
         log.info('GM data update complete')
 
-        # Update the guild data
-        #log.info('Updating guild data of guilds participating in GC...')
-        #guild_api = GuildAPI()
-        #guild_list = guild_api.get_guild_list(full_rank_list)
-        #self._update_guilds_table(guild_list)
-        #log.info('GC guild data update complete')
+
+        # Update the guilds table to add all guilds participating in GC, in case they are not in th DB already
+        log.info('Getting guild list...')
+        gc_guild_list = guild_api.get_guild_list(full_rank_list)
+        log.info('Guild list retrieved using API successfully')
+        log.info('Inserting participating guilds into DB...')
+        self._update_guilds_table(gc_guild_list)
+        log.info('Guild Insert complete')
 
         self._insert_gc_data_db(full_rank_list, day)
-
+#
         log.info('Full GC rank update complete')
 
     def _update_gc_ranks(self, gc_num, day, timeslot):
@@ -824,8 +832,7 @@ class DatabaseUpdater():
     def _general_gc_update(self, gc_num, day, timeslot, predict=True):
         try:
             log.info('Updating GC ' + str(gc_num) + ' ranks for day ' + str(day) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(datetime.utcnow()))
-            # Get the guild rank data in specified timeslot and insert to database
-            #self._update_gc_ranks(gc_num, day, timeslot)
+            # Get the full guild rank data and insert to database
             self._full_gc_rank_update(day)
             log.info('Update Complete')
 
