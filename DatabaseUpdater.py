@@ -194,15 +194,6 @@ class DatabaseUpdater():
 
     def _update_guild_gm_data(self, guild_list):
         # Function for updating the GM data of the guild list passed in (For when we do not need to update the entire player table. This is for maintaining referential integrity)
-
-        # Add only the IDs to the table first (Not all player profile pages can be accessed in the API for some reason. This way we can get the IDs in at least if nothing else)
-        pure_id_list = []
-        for guild in guild_list:
-            new_row = {
-                'userid': guild['guildMasterUserId']
-            }
-            pure_id_list.append(new_row)
-
         gm_id_list = []
         for guild in guild_list:
             # Add ever guild gm id to list
@@ -420,17 +411,19 @@ class DatabaseUpdater():
         full_rank_list = gc_api.get_full_rank_list() 
         log.info(f'Retrieval successful, rank list length:{len(full_rank_list)}')
 
-        log.info('Updating GM player data of guilds participating in GC...')
-        # Update the player data of guilds participating in GC
-        # Needed or we risk having a guild master who does not exist in the base player table (Foreign key error)
-        self._update_guild_gm_data(full_rank_list)
-        log.info('GM data update complete')
-
-
         # Update the guilds table to add all guilds participating in GC, in case they are not in th DB already
         log.info('Getting guild list...')
         gc_guild_list = guild_api.get_guild_list(full_rank_list)
         log.info('Guild list retrieved using API successfully')
+
+        log.info('Updating GM player data of guilds participating in GC...')
+        # Update the player data of guilds participating in GC
+        # Needed or we risk having a guild master who does not exist in the base player table (Foreign key error)
+        self._update_guild_gm_data(gc_guild_list)
+        log.info('GM data update complete')
+
+
+
         log.info('Inserting participating guilds into DB...')
         self._update_guilds_table(gc_guild_list)
         log.info('Guild Insert complete')
