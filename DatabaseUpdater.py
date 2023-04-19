@@ -137,9 +137,6 @@ class DatabaseUpdater():
         log.info('DatabaseUpdater Initialised')
 
     def run(self):
-        # Run daily update once on start
-        self._daily_update()
-
         # Shedule to run the update task every day, 31 min after reset
         self.sched.add_job(self._daily_update, 'cron', hour=5, minute=31)
         log.info('DatabaseUpdater starting...')
@@ -199,13 +196,16 @@ class DatabaseUpdater():
             # Add ever guild gm id to list
             gm_id_list.append(guild['guildMasterUserId'])
 
+        log.info(f'GM ID list length: {len(gm_id_list)}')
+
         # Get the data
         player_api = PlayerAPI()
         gm_data_list = player_api.get_selected_player_data(gm_id_list)
+        log.info(f'Length of gm player data:{len(gm_data_list)}')
 
         # Process the data
         gm_data_list = self._process_base_player_data(gm_data_list)
-        log.info(f'gm_data_list length:{len(gm_data_list)}')
+        log.info(f'Length of processed data list:{len(gm_data_list)}')
 
         # Insert into db
         self._insert_base_player_data_db(gm_data_list)
@@ -413,7 +413,7 @@ class DatabaseUpdater():
 
         # Update the guilds table to add all guilds participating in GC, in case they are not in th DB already
         log.info('Getting guild list...')
-        gc_guild_list = guild_api.get_guild_list(full_rank_list)
+        gc_guild_list = guild_api.get_selected_guilds(full_rank_list)
         log.info('Guild list retrieved using API successfully')
 
         log.info('Updating GM player data of guilds participating in GC...')
@@ -632,12 +632,12 @@ class DatabaseUpdater():
                     if utc_time < time(hour=5, minute=00, second=00, tzinfo=utc):
                         # If earlier, increase the day by 1 (Because GC only starts after reset)
                         update_datetime = start_date + timedelta(days=day + 1)
-                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 33, second=utc_time.second)
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 31, second=utc_time.second)
                     else:                            
                         # Else, do not modify day value
                         update_datetime = start_date + timedelta(days=day)
                         # Set the hours and minute where the colo ends + 33 min
-                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 33, second=utc_time.second)
+                        update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 31, second=utc_time.second)
 
                     # Check if current day is before final day
                     if day < prelim_days:
