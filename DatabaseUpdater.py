@@ -137,6 +137,9 @@ class DatabaseUpdater():
         log.info('DatabaseUpdater Initialised')
 
     def run(self):
+        # Run daily update once on start
+        self._daily_update()
+
         # Shedule to run the update task every day, 31 min after reset
         self.sched.add_job(self._daily_update, 'cron', hour=5, minute=31)
         log.info('DatabaseUpdater starting...')
