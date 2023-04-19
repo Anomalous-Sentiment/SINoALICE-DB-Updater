@@ -50,7 +50,8 @@ INNER JOIN (
     ORDER BY gc.gcday DESC
     FETCH FIRST 1 ROW WITH TIES
 ) sec_gc USING (guilddataid, gvgeventid)
-GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6, sec_gc.ranking;
+GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6, sec_gc.ranking
+ORDER BY c.total_lf DESC;
 
 -- View to display players logged in since a specified date
 CREATE OR REPLACE VIEW login_activity AS
