@@ -2,7 +2,7 @@ from sinoalice.api.GuildAPI import GuildAPI
 from sinoalice.api.PlayerAPI import PlayerAPI
 from sinoalice.api.GranColoAPI import GranColoAPI
 from sinoalice.api.NoticesParser import NoticesParser
-from sqlalchemy import create_engine, Table, MetaData, select, desc, asc
+from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
@@ -701,7 +701,7 @@ class DatabaseUpdater():
         def get_ranking(elem):
             return elem['ranking']
 
-        ts_guild_rank_list.sort(key=get_ranking, reverse=True)
+        #ts_guild_rank_list.sort(key=get_ranking, reverse=True)
 
         # Match each guild with the next guild in rankings
         # Get guilds in 1st, 3rd, 5th, places etc...
@@ -713,9 +713,6 @@ class DatabaseUpdater():
 
         # If there is an odd number of guilds, is the final guild is excluded from matching? Needs to be checked
         for guild_a, guild_b in itertools.zip_longest(list_a, list_b):
-            if guild_a['guilddataid'] == 60045:
-                log.info(str(guild_a))
-                log.info(str(guild_b))
             # Only guild_b has a possibility of being None
             if guild_b is not None:
                 pairing = {
@@ -750,54 +747,60 @@ class DatabaseUpdater():
     def _update_day_1_matches(self, gc_num):
         log.info('Running day 1 match interpolation...')
         # Function to update the day 1 matchmaking list based on guilds participating in GC
-        # Get the full day 1 ranking list
-        day_1_guild_list = []
-        day_1_statement = select(self.gc_data_table.c.guilddataid).where(self.gc_data_table.c.gvgeventid == gc_num).order_by(desc(self.gc_data_table.c.point), asc(self.gc_data_table.c.gvgeventrankingdataid))
 
-
-        # Get the day 0 rank list (pre-day 1)
-        day_0_guild_list = []
-        day_0_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype).where(self.day_0_table.c.gvgeventid == gc_num)
+        # Inner join day 0 (temp) table with guilds table on guilddataid to get only guilds participating in GC
+        joined_table = self.gc_data_table.join(self.day_0_table, self.day_0_table.c.guilddataid == self.gc_data_table.c.guilddataid)
+        # Statement to get the required data from the joined table. Order by ranking, get only data for the current GC
+        participating_guilds_stmt = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.guilddataid, self.gc_data_table.c.gvgtimetype, self.day_0_table.c.ranking).select_from(joined_table).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gcday == 1).order_by(asc(self.day_0_table.c.ranking))
 
         # Get time slots participating in GC
         ts_statement = select(self.timeslot_table.c.gvgtimetype).where(self.timeslot_table.c.gc_available == True)
 
+        log.info('Getting guilds participating in GC and timeslots...')
         with self.engine.connect() as conn:
-            day_0_guild_list = conn.execute(day_0_statement).all()
-            day_1_guild_list = conn.execute(day_1_statement).all()
+            participating_guild_list = conn.execute(participating_guilds_stmt).all()
+
             timeslots = conn.execute(ts_statement).all()
             conn.commit()
-
-        id_list = []
-        for guild in day_1_guild_list:
-            # Add only the guilddataid to new list. New list contains all guilddataids that are in the specified GC
-            id_list.append(guild[0])
-
-        # Filter out the guilds that were not in day 1 (Not participating in GC)
-        participating_guild_ids = [guild for guild in day_0_guild_list if guild[1] in id_list]
-
-        log.info(f'Participating guilds:{len(participating_guild_ids)}')
-
-        working_list = []
-        # Convert to list of dicts for easy working
-        for guild in participating_guild_ids:
-            new_dict = {
-                'gcday': 1, # This function is only ever used for day 1
-                'gvgeventid': guild[0],
-                'guilddataid': guild[1],
-                'ranking': guild[2],
-                'gvgtimetype': guild[3]
-            }
-
-            working_list.append(new_dict)
-
+        log.info(f'Retrieval successful. Guild list length:{len(participating_guild_list)}')
+        
         match_list = []
-        # Perform the initial day 1 matchmaking function again for actual day 1 matches for each time slot
-        for time_type_tuple in timeslots:
-            ts_guild_list = [guild for guild in working_list if guild['gvgtimetype'] == time_type_tuple[0]]
-            matches = self._initial_gc_prediction(ts_guild_list)
+
+        log.info('Filtering guilds for each timeslot and performing matchmaking...')
+        # ITerate through each TS and filter guild list by the selected TS
+        for gvgtimetype, in timeslots:
+            # Define a filter function for the TS
+            def _filter_func(curr_guild):
+                # Unpack guild data tuple
+                (gc_num, guild_id, guild_timetype, ranking) = curr_guild
+                # Check if gvgtimetype matches the one in the outer loop
+                if gvgtimetype == guild_timetype:
+                    # Guild in the time slot
+                    return True
+                else:
+                    return False
+
+            # Perform the filter. It should preserve order
+            filtered_list = filter(_filter_func, participating_guild_list)
+
+            converted_list = []
+            for gc_num, guild_id, timetype, ranking  in filtered_list:
+                new_dict = {
+                    'gcday': 1, # This function is only ever used for day 1
+                    'gvgeventid': gc_num,
+                    'guilddataid': guild_id,
+                    'ranking': ranking,
+                    'gvgtimetype': timetype
+                }
+                converted_list.append(new_dict)
+
+            # Pass the TS guild list into the initial matchmaking function
+            matches = self._initial_gc_prediction(converted_list)
+
+            # Add to the match list
             match_list.extend(matches)
 
+        log.info(f'Matchmaking complete. Number of matches calculated:{len(matches)}')
         # Update the db with the matched pairs
         insert_gc_matches = insert(self.match_table)
         update_gc_matches = {col.name: col for col in insert_gc_matches.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
@@ -813,6 +816,7 @@ class DatabaseUpdater():
         log.info('Insert successful')
 
         log.info('Day 1 matches update complete')
+
 
     def _general_gc_update(self, gc_num, day, timeslot, predict=True):
         try:
