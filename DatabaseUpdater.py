@@ -909,7 +909,7 @@ class DatabaseUpdater():
         predicted_match_list = []
 
         # Iterate through the guild list to match every guild
-        for index in range(0, len(guild_list), 1):
+        for index in range(0, len(guild_list) + 2, 1):
             # Wrapper for recursive function. The function will append to the predicted_match_list passed in
             self._recurse_matchups_root(index, index + 1, guild_matches_dict, matched_list, predicted_match_list, guild_list)
 
@@ -952,30 +952,11 @@ class DatabaseUpdater():
         if self._match_guilds(guilddataid, prospective_opp_id, matched_list, guild_matches_dict, predicted_match_list, gvgeventid, day):
             # Successful match at root node
             return
-
-        # Base case 3: Odd numbered list. No guild to match with guid at index_a
-        if index_b + 1 >= len(guild_list):
-            # Last element of guild list
-            # If at last element of list, and current guild not matched, set guild to match with None
-            new_match = {
-                'gcday': day + 1,
-                'gvgeventid': gvgeventid,
-                'guilddataid': guilddataid,
-                'opponentguilddataid': None
-            }
-            predicted_match_list.append(new_match)
-            matched_list.append(guilddataid)
-            return
-
-        (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[index_b + 1]
-
-        if self._match_guilds(guilddataid, prospective_opp_id, matched_list, guild_matches_dict, predicted_match_list, gvgeventid, day):
-            return
         else:
             # Recurse to find matchup for guild at index_a
             # If at start, would be 1 v 3. If later in tree where for example 1 matched with r5, index_a could be 3, and index_b could be 6
             # So this would be 3 and 7, the start of a new tree
-            self._recurse_matchups(index_a, index_b + 2, guild_matches_dict, matched_list, predicted_match_list, guild_list)
+            self._recurse_matchups(index_a, index_b + 1, guild_matches_dict, matched_list, predicted_match_list, guild_list)
 
     def _recurse_matchups(self, index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list):
         # Base case 1: End of even numbered list. No guilds left to match
@@ -1008,7 +989,7 @@ class DatabaseUpdater():
             return
         else:
             # Continue recursing to find a matchup for guild at index_a
-            self._recurse_matchups(index_a, index_b + 2, guild_matches_dict, matched_list, predicted_match_list, guild_list)
+            self._recurse_matchups(index_a, index_b + 2, guild_matches_dict, matched_list, predicted_match_list, guild_list, gvgeventid, day)
             # Then once match at index_a is found, move to next node and find match for guild at index_b
             self._recurse_matchups_root(index_b, (index_b + 2) + 1, guild_matches_dict, matched_list, predicted_match_list, guild_list)
         
