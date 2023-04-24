@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime, date, timedelta, time
-from apscheduler.schedulers.background import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
 from pytz import utc
 import itertools
@@ -64,7 +64,7 @@ def log_exception(msg, tb):
 class DatabaseUpdater():
     def __init__(self):
         self.job_list = []
-        self.sched = BlockingScheduler(timezone=utc)
+        self.sched = BackgroundScheduler(timezone=utc)
         # Pre pool ping because database might not be started yet.
         self.engine = create_engine(os.getenv('POSTGRES_URL'), pool_pre_ping=True, connect_args={'sslmode':'require'})
         self.metadata = MetaData()
