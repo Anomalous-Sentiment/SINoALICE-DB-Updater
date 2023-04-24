@@ -595,7 +595,7 @@ class DatabaseUpdater():
                 job.remove()
 
             # Schedule the initial gc rank update on day 2, 1 min after reset
-            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=1)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
+            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=3)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
             self.job_list.append(day_2_job)
 
             gc_timeslots = self._get_gc_timeslots()
@@ -870,7 +870,7 @@ class DatabaseUpdater():
         unmatched_nodes_list = []
 
         # Iterate through the guild list to match every guild
-        for index in range(0, len(guild_list) + 2, 1):
+        for index in range(0, len(guild_list), 1):
             # Wrapper for recursive function. The function will append to the predicted_match_list passed in
             self._recurse_matchups_root(0, 1, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
 
