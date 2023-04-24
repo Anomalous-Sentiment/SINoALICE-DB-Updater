@@ -2,7 +2,7 @@ from sinoalice.api.GuildAPI import GuildAPI
 from sinoalice.api.PlayerAPI import PlayerAPI
 from sinoalice.api.GranColoAPI import GranColoAPI
 from sinoalice.api.NoticesParser import NoticesParser
-from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join
+from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join, func
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
@@ -456,9 +456,6 @@ class DatabaseUpdater():
             # Update the guilds
             guild_api = GuildAPI()
 
-            #with open(f'guild_list.json', 'r') as f:
-            #    guild_id_list = json.load(f)
-
             # Update the players using guild list (Get from database)
             guild_id_list = self._get_guild_ids()
             guild_list = guild_api.get_guild_list(guild_id_list)
@@ -584,19 +581,6 @@ class DatabaseUpdater():
             log.info('Scheduling GC updates...')
             start_date = date_dict['prelims']['start']
             end_date = date_dict['prelims']['end']
-            # The time slot number, and the hours offset from reset time
-            colo_time_offsets = [
-                (3, timedelta(hours=14)),
-                (4, timedelta(hours=15)),
-                (5, timedelta(hours=16)),
-                (6, timedelta(hours=18)),
-                (7, timedelta(hours=20)),
-                (8, timedelta(hours=21)),
-                (9, timedelta(hours=22)),
-                (10, timedelta(hours=23)),
-                (12, timedelta(hours=8)),
-                (13, timedelta(hours=9)),
-            ]
 
             # Use the first month of gc to calculate the current GC number
             # This assumes that a GC occurs every month, and only once every month. This will become inaccurate otherwise
@@ -697,11 +681,6 @@ class DatabaseUpdater():
         log.info('Starting initial GC match predictions...')
         match_list = []
         # Takes a list of guilds in a ts and predicts day 1 matchups
-        # Sort by rankings
-        def get_ranking(elem):
-            return elem['ranking']
-
-        #ts_guild_rank_list.sort(key=get_ranking, reverse=True)
 
         # Match each guild with the next guild in rankings
         # Get guilds in 1st, 3rd, 5th, places etc...
@@ -844,10 +823,12 @@ class DatabaseUpdater():
         time_type = (2 ** (timeslot - 1))
 
         # Get gc data for day and timeslot (For predicting the following day)
-        get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day)
+        get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.gcday, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day).order_by(desc(self.gc_data_table.c.point))
 
         # Get the current match list from db
-        get_gc_matches_statement = select(self.formatted_match_table).where(self.formatted_match_table.c.gvgeventid == gc_num, self.formatted_match_table.c.gvgtimetype == time_type)
+        joined_table = self.match_table.join(self.gc_data_table, self.match_table.c.guilddataid == self.gc_data_table.c.guilddataid and self.match_table.c.gcday == self.gc_data_table.c.gcday and self.gc_data_table.c.gvgeventid == self.match_table.c.gvgeventid)
+        get_gc_matches_statement = select(self.match_table.c.guilddataid, func.array_agg(self.match_table.c.opponentguilddataid)).where(self.match_table.c.gvgeventid == gc_num).group_by(self.match_table.c.guilddataid)
+        #get_gc_matches_statement = select(self.formatted_match_table).where(self.formatted_match_table.c.gvgeventid == gc_num, self.formatted_match_table.c.gvgtimetype == time_type)
 
         # Execute statements
         with self.engine.connect() as conn:
@@ -856,68 +837,26 @@ class DatabaseUpdater():
             conn.commit()
 
         # Convert match list to dict containing array of guilds fought
-        for row in match_tuple_list:
-            match_list = []
-            # Tuple index 4 onwards contains matches from day 1 onwards (Using indexes in case days increase)
-            # Only add up to the current day (If GC data is prefilled past the current day, there may be unexpected results)
-            for index in range(4, 4 + day):
-                # Add the guild's previously fought to the guilds matched list
-                match_list.append(row[index])
-                
-            match_dict[row[3]] = match_list
+        for guild_id, past_match_list in match_tuple_list:
+            match_dict[guild_id] = past_match_list
 
-        # Sort the rank list by points
-        ranking_tuple_list.sort(key=lambda tup: tup[2], reverse=True)  # sorts in place
+        log.info(f'Length of guild list from DB: {len(ranking_tuple_list)}')
 
-        # Iterate through the gc rank list
-        for index, (gvgeventid, guilddataid, point) in enumerate(ranking_tuple_list):
-            orig_index = index
-            # Check if in the already matched list (for the day)
-            if (guilddataid not in matched_list):
-                # Loop until the guild is matched with another guild, or if at end of list (Might leave out a guild)
-                while (guilddataid not in matched_list and index + 1 < len(ranking_tuple_list)):
-                    # Increment to get next guild in rankings
-                    index = index + 1
+        predicted_match_list = self._predict_matchups_wrapper(match_dict, ranking_tuple_list)
 
-                    # Temporary extra check to see if the match dict contains the guilddataid
-                    if guilddataid in match_dict:
-                        # The matched guild must not have been fought this GC, and must not have been matched with another guild already for the day
-                        if (ranking_tuple_list[index][1] not in match_dict[guilddataid] and ranking_tuple_list[index][1] not in matched_list):
-                            # Have not fought before. Valid match
-                            # Add to match list
-                            new_match = {
-                                'gcday': day + 1,
-                                'gvgeventid': gvgeventid,
-                                'guilddataid': guilddataid,
-                                'opponentguilddataid': ranking_tuple_list[index][1]
-                            }
+        log.info(f'length of predictions: {len(predicted_match_list)}')
+        log.info(str(predicted_match_list))
 
-                            alt_match = {
-                                'gcday': day + 1,
-                                'gvgeventid': gvgeventid,
-                                'opponentguilddataid': guilddataid,
-                                'guilddataid': ranking_tuple_list[index][1]
-                            }
+        # Can delete. Only for debugging
+        seen_list = []
+        for matchup in predicted_match_list:
+            if matchup['guilddataid'] not in seen_list:
+                seen_list.append(matchup['guilddataid'])
+            else:
+                dup_id = matchup['guilddataid']
+                log.info(f'Duplicate guild id: {dup_id}')
+                log.info(f'Data: {str(matchup)}')
 
-
-                            predicted_match_list.append(new_match)
-                            predicted_match_list.append(alt_match)
-
-                            # Add both guild ids to the matched list to exit loop
-                            matched_list.append(guilddataid)
-                            matched_list.append(ranking_tuple_list[index][1])
-
-                # On exit of while loop, check if the index is at last element of list
-                if index == len(ranking_tuple_list) - 1 and guilddataid not in matched_list:
-                    # If at last element of list, and current guild not matched, set guild to match with None
-                    new_match = {
-                        'gcday': day + 1,
-                        'gvgeventid': gvgeventid,
-                        'guilddataid': guilddataid,
-                        'opponentguilddataid': None
-                    }
-                    predicted_match_list.append(new_match)
-                    matched_list.append(guilddataid)
         
         # Insert new predicted matches into database
         insert_gc_matches = insert(self.match_table).values(predicted_match_list)
@@ -934,6 +873,166 @@ class DatabaseUpdater():
         log.info('Insert successful')
 
         log.info('General matchmaking complete')
+
+    def _predict_matchups_wrapper(self, guild_matches_dict, guild_list):
+        matched_list = []
+        predicted_match_list = []
+        unmatched_nodes_list = []
+
+        # Iterate through the guild list to match every guild
+        for index in range(0, len(guild_list) + 2, 1):
+            # Wrapper for recursive function. The function will append to the predicted_match_list passed in
+            self._recurse_matchups_root(0, 1, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
+
+            # Iterate through and check the match nodes added from the previous guild matchup until all are matched (unmatched_node_list may increase in length here)
+            while len(unmatched_nodes_list) > 0:
+                (index_a, index_b) = unmatched_nodes_list.pop(0)
+                self._recurse_matchups_root(index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
+
+        return predicted_match_list
+
+    # For use in calculating the indexes in the logic tree
+    def _next_idx_generator(self, initial_idx):
+        next_idx = initial_idx + 1
+        while True:
+            yield next_idx
+            next_idx += 1
+
+    def _recurse_matchups_root(self, index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list, unmatched_nodes_list):
+        gen = self._next_idx_generator(index_b)
+        # Base case 1: End of even numbered list. No guilds left to match
+        if index_a >= len(guild_list):
+            # Last element of guild list
+            return
+
+        # Unpack tuple from list
+        (gvgeventid, day, guilddataid, curr_point) = guild_list[index_a]
+
+        # Base case 2: Already matched, return
+        if guilddataid in matched_list:
+            return
+
+        # Base case 3: Odd numbered list. No guild to match with guid at index_a
+        if index_b >= len(guild_list):
+            # Add to predicted match list
+            self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
+            return
+
+        (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[index_b]
+
+        # Check if if guild at index_a can fight guild at index_b (while loop)
+        valid_match = self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict)
+        remaining_node_list = []
+
+        if valid_match:
+            # Add to predicted match list
+            self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
+
+
+        # Repeat while guild at index_a is not matched
+        while (not valid_match and index_b < len(guild_list) and index_a < len(guild_list)):
+            prospective_opp_id = None
+
+            # Calculate child nodes and queue the right child to node list
+            child_node_list = self._calculate_children_node_indexes(gen, index_a, index_b)
+
+            # Get the left child indexes
+            (index_a, index_b) = child_node_list.pop(0)
+
+            # Iterate through each remaining node and calculate their children nodes and enqueue to list
+            if len(remaining_node_list) > 0:
+                temp_node_list = []
+                # Iterate through the nodes in the last level of the node list
+                for node in remaining_node_list[-1]:
+                    if type(node) is not tuple:
+                        breakpoint()
+                    (curr_node_idx_a, curr_node_idx_b) = node
+                    child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
+                    temp_node_list.extend(child_nodes)
+                # Add the nw level to the node list
+                remaining_node_list.append(temp_node_list)
+
+            # Add the right child to the remaining node list
+            remaining_node_list.append(child_node_list)
+
+            (gvgeventid, day, guilddataid, curr_point) = guild_list[index_a]
+            #if guilddataid == 48634:
+            #    breakpoint()
+
+            # Check if new match is possible
+            if index_b < len(guild_list):
+                (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[index_b]
+                valid_match = self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict)
+            else:
+                #self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
+                prospective_opp_id = None
+                valid_match = True
+
+            if valid_match:
+                # If can match, add to predicted list and iterate through the right node list (for each loop)
+                self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
+
+                for tree_level in remaining_node_list:
+                    for node in tree_level:
+                        # Pop each remaining node in list, check if the guilds contained in the node can match (after returning from function)
+                        (child_idx_a, child_idx_b) = node
+                        unmatched_node = (child_idx_a, child_idx_b)
+                        unmatched_nodes_list.append(unmatched_node)
+                        # Else, move on to the next node (This node's children will be further down in the list, but if previously matched, the children will not match)
+        return unmatched_nodes_list
+
+    def _calculate_children_node_indexes(self, gen, index_a, index_b):
+        # Convert form 0 indexed to 1 indexed for working
+        child_index_tuples = []
+
+        left_child_index_a = index_a
+        left_child_index_b = next(gen)
+
+        right_child_index_a = index_b
+        right_child_index_b =  next(gen) # Should be +1 from lefct_child_index_b
+
+        # Add to list
+        left_node = (left_child_index_a, left_child_index_b)
+        right_node = (right_child_index_a, right_child_index_b)
+
+        child_index_tuples.append(left_node)
+        child_index_tuples.append(right_node)
+
+        return child_index_tuples
+
+
+    def _can_match(self, guilddataid, prospective_opp_id, matched_list, guild_matches_dict):
+        if guilddataid not in matched_list and prospective_opp_id not in matched_list and guilddataid in guild_matches_dict and prospective_opp_id not in guild_matches_dict[guilddataid]:
+            # Have not fought before. Valid match
+            return True
+        elif (guilddataid not in matched_list and prospective_opp_id not in matched_list and guilddataid not in guild_matches_dict):
+            # Not in guild matches dict. Probably left out and doesn't have a match
+            return True
+
+        return False
+
+    def _add_to_predicted_matches(self, predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id):
+        # Add to match list
+        new_match = {
+            'gcday': day + 1,
+            'gvgeventid': gvgeventid,
+            'guilddataid': guilddataid,
+            'opponentguilddataid': prospective_opp_id
+        }
+
+        alt_match = {
+            'gcday': day + 1,
+            'gvgeventid': gvgeventid,
+            'opponentguilddataid': guilddataid,
+            'guilddataid': prospective_opp_id
+        }
+
+        predicted_match_list.append(new_match)
+        matched_list.append(guilddataid)
+
+        if prospective_opp_id is not None:
+            matched_list.append(prospective_opp_id)
+            predicted_match_list.append(alt_match)
 
     def _init_day_0_gc_list(self, gc_num):
         day_0_list = []
