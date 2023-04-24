@@ -837,7 +837,6 @@ class DatabaseUpdater():
         predicted_match_list = self._predict_matchups_wrapper(match_dict, ranking_tuple_list)
 
         log.info(f'length of predictions: {len(predicted_match_list)}')
-        #log.info(str(predicted_match_list))
 
         # Can delete. Only for debugging
         seen_list = []
@@ -936,8 +935,6 @@ class DatabaseUpdater():
                 temp_node_list = []
                 # Iterate through the nodes in the last level of the node list
                 for node in remaining_node_list[-1]:
-                    if type(node) is not tuple:
-                        breakpoint()
                     (curr_node_idx_a, curr_node_idx_b) = node
                     child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
                     temp_node_list.extend(child_nodes)
@@ -948,8 +945,6 @@ class DatabaseUpdater():
             remaining_node_list.append(child_node_list)
 
             (gvgeventid, day, guilddataid, curr_point) = guild_list[index_a]
-            #if guilddataid == 48634:
-            #    breakpoint()
 
             # Check if new match is possible
             if index_b < len(guild_list):
@@ -981,7 +976,7 @@ class DatabaseUpdater():
         left_child_index_b = next(gen)
 
         right_child_index_a = index_b
-        right_child_index_b =  next(gen) # Should be +1 from lefct_child_index_b
+        right_child_index_b =  next(gen) # Should be +1 from left_child_index_b
 
         # Add to list
         left_node = (left_child_index_a, left_child_index_b)
