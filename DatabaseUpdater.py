@@ -435,18 +435,6 @@ class DatabaseUpdater():
 #
         log.info('Full GC rank update complete')
 
-    def _update_gc_ranks(self, gc_num, day, timeslot):
-        log.info('GC ' + str(gc_num) + ' , day ' + str(day) + ' rank update for timeslot: ' + str(timeslot) + ' starting...')
-        gc_api = GranColoAPI()
-
-        # Get the rank list of the time slot
-        log.info('Getting rank list of TS ' + str(timeslot) + ' using API...')
-        timeslot_rank_list = gc_api.get_ts_rank_list(timeslot)
-        log.info('Retrieval successful')
-
-        self._insert_gc_data_db(timeslot_rank_list, day)
-        
-
     def _daily_update(self):
         try:
             log.info('Starting daily update...')
