@@ -847,16 +847,12 @@ class DatabaseUpdater():
         log.info(f'length of predictions: {len(predicted_match_list)}')
         log.info(str(predicted_match_list))
 
+        # Can delete. Only for debugging
         seen_list = []
         for matchup in predicted_match_list:
             if matchup['guilddataid'] not in seen_list:
                 seen_list.append(matchup['guilddataid'])
             else:
-                dup_id = matchup['guilddataid']
-                log.info(f'Duplicate guild id: {dup_id}')
-                log.info(f'Data: {str(matchup)}')
-
-            if matchup['guilddataid'] == 42369:
                 dup_id = matchup['guilddataid']
                 log.info(f'Duplicate guild id: {dup_id}')
                 log.info(f'Data: {str(matchup)}')
@@ -888,16 +884,10 @@ class DatabaseUpdater():
             # Wrapper for recursive function. The function will append to the predicted_match_list passed in
             self._recurse_matchups_root(0, 1, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
 
+            # Iterate through and check the match nodes added from the previous guild matchup until all are matched (unmatched_node_list may increase in length here)
             while len(unmatched_nodes_list) > 0:
                 (index_a, index_b) = unmatched_nodes_list.pop(0)
                 self._recurse_matchups_root(index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
-
-            # Iterate through the remaining lodes of the tree
-            #while len(recurse_node_list) > 0:
-                #print(len(recurse_node_list))
-                #breakpoint()
-            #    (index_a, index_b) = recurse_node_list.pop(0)
-            #    self._recurse_matchups_root(index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list, recurse_node_list)
 
         return predicted_match_list
 
