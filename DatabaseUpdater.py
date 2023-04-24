@@ -2,7 +2,7 @@ from sinoalice.api.GuildAPI import GuildAPI
 from sinoalice.api.PlayerAPI import PlayerAPI
 from sinoalice.api.GranColoAPI import GranColoAPI
 from sinoalice.api.NoticesParser import NoticesParser
-from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join, func
+from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join, func, and_
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
@@ -813,18 +813,20 @@ class DatabaseUpdater():
         time_type = (2 ** (timeslot - 1))
 
         # Get gc data for day and timeslot (For predicting the following day)
-        get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.gcday, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day).order_by(desc(self.gc_data_table.c.point))
+        get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.gcday, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day).order_by(desc(self.gc_data_table.c.point), asc(self.gc_data_table.c.gvgeventrankingdataid))
 
         # Get the current match list from db
-        joined_table = self.match_table.join(self.gc_data_table, self.match_table.c.guilddataid == self.gc_data_table.c.guilddataid and self.match_table.c.gcday == self.gc_data_table.c.gcday and self.gc_data_table.c.gvgeventid == self.match_table.c.gvgeventid)
-        get_gc_matches_statement = select(self.match_table.c.guilddataid, func.array_agg(self.match_table.c.opponentguilddataid)).where(self.match_table.c.gvgeventid == gc_num).group_by(self.match_table.c.guilddataid)
-        #get_gc_matches_statement = select(self.formatted_match_table).where(self.formatted_match_table.c.gvgeventid == gc_num, self.formatted_match_table.c.gvgtimetype == time_type)
+        joined_table = self.match_table.join(self.gc_data_table, and_(self.match_table.c.guilddataid == self.gc_data_table.c.guilddataid, self.match_table.c.gcday == self.gc_data_table.c.gcday, self.gc_data_table.c.gvgeventid == self.match_table.c.gvgeventid, self.match_table.c.gcday <= day))
+        get_gc_matches_statement = select(self.match_table.c.guilddataid, func.array_agg(self.match_table.c.opponentguilddataid)).select_from(joined_table).where(self.match_table.c.gvgeventid == gc_num, self.match_table.c.gcday <= day, self.gc_data_table.c.gvgtimetype == time_type).group_by(self.match_table.c.guilddataid)
 
         # Execute statements
         with self.engine.connect() as conn:
             ranking_tuple_list =  conn.execute(get_gc_data_statement).all()
             match_tuple_list = conn.execute(get_gc_matches_statement).all()
             conn.commit()
+
+        log.info(f'Match list: {str(match_tuple_list)}')
+        log.info(f'Length of matched list from DB:{len(match_tuple_list)}')
 
         # Convert match list to dict containing array of guilds fought
         for guild_id, past_match_list in match_tuple_list:
@@ -835,7 +837,7 @@ class DatabaseUpdater():
         predicted_match_list = self._predict_matchups_wrapper(match_dict, ranking_tuple_list)
 
         log.info(f'length of predictions: {len(predicted_match_list)}')
-        log.info(str(predicted_match_list))
+        #log.info(str(predicted_match_list))
 
         # Can delete. Only for debugging
         seen_list = []
