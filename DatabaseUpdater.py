@@ -453,6 +453,8 @@ class DatabaseUpdater():
 
             notices_parser = NoticesParser()
 
+            # TODO: Implement check to see if maintainence is in progress to avoid errors
+
             # Update the guilds
             guild_api = GuildAPI()
 
