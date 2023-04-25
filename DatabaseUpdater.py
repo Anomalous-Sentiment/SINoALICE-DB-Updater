@@ -816,7 +816,7 @@ class DatabaseUpdater():
         get_gc_data_statement = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.gcday, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == day).order_by(desc(self.gc_data_table.c.point), asc(self.gc_data_table.c.gvgeventrankingdataid))
 
         # Get the current match list from db
-        joined_table = self.match_table.join(self.gc_data_table, and_(self.match_table.c.guilddataid == self.gc_data_table.c.guilddataid, self.match_table.c.gcday == self.gc_data_table.c.gcday, self.gc_data_table.c.gvgeventid == self.match_table.c.gvgeventid, self.match_table.c.gcday <= day))
+        joined_table = self.match_table.join(self.gc_data_table, and_(self.match_table.c.guilddataid == self.gc_data_table.c.guilddataid, self.match_table.c.gcday == self.gc_data_table.c.gcday, self.gc_data_table.c.gvgeventid == self.match_table.c.gvgeventid))
         get_gc_matches_statement = select(self.match_table.c.guilddataid, func.array_agg(self.match_table.c.opponentguilddataid)).select_from(joined_table).where(self.match_table.c.gvgeventid == gc_num, self.match_table.c.gcday <= day, self.gc_data_table.c.gvgtimetype == time_type).group_by(self.match_table.c.guilddataid)
 
         # Execute statements
@@ -827,6 +827,9 @@ class DatabaseUpdater():
 
         log.info(f'Match list: {str(match_tuple_list)}')
         log.info(f'Length of matched list from DB:{len(match_tuple_list)}')
+
+        breakpoint()
+
 
         # Convert match list to dict containing array of guilds fought
         for guild_id, past_match_list in match_tuple_list:
