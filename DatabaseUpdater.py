@@ -765,6 +765,7 @@ class DatabaseUpdater():
 
             # Pass the TS guild list into the initial matchmaking function
             matches = self._initial_gc_prediction(converted_list)
+            log.info(f'Matched a total of {len(matches)} matches for time type: {gvgtimetype}')
 
             # Add to the match list
             match_list.extend(matches)
@@ -825,11 +826,8 @@ class DatabaseUpdater():
             match_tuple_list = conn.execute(get_gc_matches_statement).all()
             conn.commit()
 
-        log.info(f'Match list: {str(match_tuple_list)}')
+        #log.info(f'Match list: {str(match_tuple_list)}')
         log.info(f'Length of matched list from DB:{len(match_tuple_list)}')
-
-        breakpoint()
-
 
         # Convert match list to dict containing array of guilds fought
         for guild_id, past_match_list in match_tuple_list:
