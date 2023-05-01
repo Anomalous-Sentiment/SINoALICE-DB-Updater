@@ -27,14 +27,14 @@ DROP VIEW IF EXISTS gc_matchups;
 CREATE OR REPLACE VIEW gc_matchups AS
     SELECT c.*, ARRAY_AGG(dt.point ORDER BY dt.updated_at) daily_lf from crosstab(
         $$
-            SELECT ARRAY[base.gvgeventid, base.guilddataid]::text[], base.gvgeventid, base.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
+            SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", transition.gcday, og.guildname
             FROM gc_predictions base
-            INNER JOIN
+            RIGHT JOIN
             (
-              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, MAX(point) AS points
+              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, gd.gcday, MAX(point) AS points
               FROM gc_data gd
               INNER JOIN timeslots t USING (gvgtimetype)
-              GROUP BY gd.guilddataid, gd.gvgeventid, t.timeslot
+              GROUP BY gd.guilddataid, gd.gvgeventid, t.timeslot, gd.gcday
             ) transition USING (guilddataid, gvgeventid)
             LEFT JOIN guilds g ON g.guilddataid = base.guilddataid
             LEFT JOIN guilds og ON base.opponentguilddataid = og.guilddataid
@@ -44,7 +44,7 @@ CREATE OR REPLACE VIEW gc_matchups AS
             SELECT DISTINCT gcday FROM gc_days ORDER BY 1
         $$
     ) as c(rn TEXT[], gc_num SMALLINT, guild_id INTEGER, timeslot SMALLINT, guild TEXT, total_lf BIGINT, day_1 TEXT, day_2 TEXT, day_3 TEXT, day_4 TEXT, day_5 TEXT, day_6 TEXT)
-RIGHT JOIN gc_data dt ON c.gc_num = dt.gvgeventid AND dt.guilddataid = c.guild_id
+LEFT JOIN gc_data dt ON c.gc_num = dt.gvgeventid AND dt.guilddataid = c.guild_id
 GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6
 ORDER BY c.total_lf DESC;
 
@@ -156,7 +156,9 @@ SELECT
     ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.maxhp)) AS "Median Member HP",
     SUM(players.totalpower) AS "Total Estimated CP",
     ROUND(AVG(players.totalpower)) AS "Average Member CP",
-    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower)) AS "Median Member CP"
+    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower)) AS "Median Member CP",
+    gld.updated_at AS "Last Updated"
+
 FROM base_player_data players
 INNER JOIN guilds gld USING (guilddataid)
 INNER JOIN guild_ranks rks USING (guildrank)
