@@ -157,7 +157,7 @@ SELECT
     SUM(players.totalpower) AS "Total Estimated CP",
     ROUND(AVG(players.totalpower)) AS "Average Member CP",
     ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.totalpower)) AS "Median Member CP",
-    gld.updated_at AS "Last Updated"
+    date_trunc('second', gld.updated_at) AS "Last Updated"
 
 FROM base_player_data players
 INNER JOIN guilds gld USING (guilddataid)
