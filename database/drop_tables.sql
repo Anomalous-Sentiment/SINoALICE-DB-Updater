@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS player_activity;
 DROP TABLE IF EXISTS gc_predictions;
 DROP TABLE IF EXISTS temp;
-DROP TABLE IF EXISTS gc_data;
+DROP TABLE IF EXISTS gc_data CASCADE;
 DROP TABLE IF EXISTS guilds CASCADE;
 DROP TRIGGER IF EXISTS player_data_ins ON extra_player_data;
 DROP TRIGGER IF EXISTS player_data_upd ON extra_player_data;
