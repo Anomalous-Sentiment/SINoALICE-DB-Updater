@@ -70,7 +70,7 @@ INNER JOIN (
     -- Join to get the LF gain of the opponent guild for the day (Inclusive of Win/loss bonus)
     LEFT JOIN (
         -- Query to get the LF gain of each guild
-        SELECT gld.guilddataid, inner_days.gcday, FIRST_VALUE(sub_gc.gvgeventid) OVER (PARTITION BY sub_gc.gvgeventid, gld.guilddataid ORDER BY sub_gc.gvgeventid IS NULL) AS gvgeventid, COALESCE(sub_gc.point, 0) AS lf, COALESCE(MAX(sub_gc.point) OVER (PARTITION BY (guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday) - MAX(sub_gc.point) OVER (PARTITION BY (guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), sub_gc.point) AS "lf_gain" FROM guilds gld
+        SELECT gld.guilddataid, inner_days.gcday, FIRST_VALUE(sub_gc.gvgeventid) OVER (PARTITION BY sub_gc.gvgeventid, gld.guilddataid ORDER BY sub_gc.gvgeventid IS NULL) AS gvgeventid, COALESCE(sub_gc.point, 0) AS lf, COALESCE(MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday) - MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), sub_gc.point) AS "lf_gain" FROM guilds gld
         CROSS JOIN gc_days inner_days
         LEFT JOIN gc_data sub_gc USING (guilddataid, gcday)
     ) lf_data ON (pred.opponentguilddataid = lf_data.guilddataid ) AND pred.gvgeventid = lf_data.gvgeventid AND lf_data.gcday = pred.gcday
