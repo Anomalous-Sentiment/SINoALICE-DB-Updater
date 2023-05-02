@@ -247,7 +247,7 @@ CREATE TABLE temp
     updated_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
     CONSTRAINT fk_guild
         FOREIGN KEY (guildDataId) REFERENCES guilds (guildDataId),
-    PRIMARY KEY (guildDataId)
+    PRIMARY KEY (gvgeventid, guildDataId)
 );
 
 DROP TABLE IF EXISTS gc_predictions;
