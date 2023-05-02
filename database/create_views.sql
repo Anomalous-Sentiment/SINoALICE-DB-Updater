@@ -25,16 +25,16 @@ CREATE OR REPLACE VIEW gc_matchups_id AS
 DROP VIEW IF EXISTS gc_matchups;
 -- View to get table of guild matchups
 CREATE OR REPLACE VIEW gc_matchups AS
-    SELECT c.*, ARRAY_AGG(dt.point ORDER BY dt.updated_at) daily_lf from crosstab(
+    SELECT c.*, ARRAY_AGG(dt.point ORDER BY dt.updated_at) daily_lf, daily_data.opp_lf from crosstab(
         $$
-            SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", transition.gcday, og.guildname
+            SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
             FROM gc_predictions base
             RIGHT JOIN
             (
-              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, gd.gcday, MAX(point) AS points
+              SELECT gd.guilddataid, gd.gvgeventid, t.timeslot, MAX(point) AS points
               FROM gc_data gd
               INNER JOIN timeslots t USING (gvgtimetype)
-              GROUP BY gd.guilddataid, gd.gvgeventid, t.timeslot, gd.gcday
+              GROUP BY gd.guilddataid, gd.gvgeventid, t.timeslot
             ) transition USING (guilddataid, gvgeventid)
             LEFT JOIN guilds g ON g.guilddataid = base.guilddataid
             LEFT JOIN guilds og ON base.opponentguilddataid = og.guilddataid
@@ -45,7 +45,26 @@ CREATE OR REPLACE VIEW gc_matchups AS
         $$
     ) as c(rn TEXT[], gc_num SMALLINT, guild_id INTEGER, timeslot SMALLINT, guild TEXT, total_lf BIGINT, day_1 TEXT, day_2 TEXT, day_3 TEXT, day_4 TEXT, day_5 TEXT, day_6 TEXT)
 LEFT JOIN gc_data dt ON c.gc_num = dt.gvgeventid AND dt.guilddataid = c.guild_id
-GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6
+INNER JOIN (
+        SELECT pred.gvgeventid, pred.guilddataid, array_agg(COALESCE(lf_data.lf_gain, 0) ORDER BY pred.gcday ASC) AS opp_lf FROM (
+      SELECT pr.guilddataid, events.gvgeventid, sub_days.gcday, new_pred.opponentguilddataid
+      FROM gc_events events
+      CROSS JOIN gc_days sub_days
+      CROSS JOIN (
+        SELECT DISTINCT(pred.gvgeventid, pred.guilddataid), pred.guilddataid
+        FROM gc_predictions pred
+      ) pr
+      LEFT JOIN gc_predictions new_pred USING (guilddataid, gvgeventid, gcday)
+    ) pred
+    LEFT JOIN (
+      -- Query to get the LF gain of each guild
+        SELECT gld.guilddataid, inner_days.gcday, FIRST_VALUE(sub_gc.gvgeventid) OVER (PARTITION BY sub_gc.gvgeventid, gld.guilddataid ORDER BY sub_gc.gvgeventid IS NULL) AS gvgeventid, COALESCE(sub_gc.point, 0) AS lf, COALESCE(MAX(sub_gc.point) OVER (PARTITION BY (guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday) - MAX(sub_gc.point) OVER (PARTITION BY (guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), sub_gc.point) AS "lf_gain" FROM guilds gld
+        CROSS JOIN gc_days inner_days
+        LEFT JOIN gc_data sub_gc USING (guilddataid, gcday)
+    ) lf_data ON (pred.opponentguilddataid = lf_data.guilddataid ) AND pred.gvgeventid = lf_data.gvgeventid AND lf_data.gcday = pred.gcday
+    GROUP BY pred.gvgeventid, pred.guilddataid
+) daily_data ON c.gc_num = daily_data.gvgeventid AND c.guild_id = daily_data.guilddataid
+GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6, daily_data.opp_lf
 ORDER BY c.total_lf DESC;
 
 -- View to display players logged in since a specified date
