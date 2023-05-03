@@ -718,7 +718,7 @@ class DatabaseUpdater():
         # Function to update the day 1 matchmaking list based on guilds participating in GC
 
         # Inner join day 0 (temp) table with guilds table on guilddataid to get only guilds participating in GC
-        joined_table = self.gc_data_table.join(self.day_0_table, self.day_0_table.c.guilddataid == self.gc_data_table.c.guilddataid)
+        joined_table = self.gc_data_table.join(self.day_0_table, and_(self.day_0_table.c.guilddataid == self.gc_data_table.c.guilddataid, self.day_0_table.c.gvgeventid == self.gc_data_table.c.gvgeventid))
         # Statement to get the required data from the joined table. Order by ranking, get only data for the current GC
         participating_guilds_stmt = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.guilddataid, self.gc_data_table.c.gvgtimetype, self.day_0_table.c.ranking).select_from(joined_table).where(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gcday == 1).order_by(asc(self.day_0_table.c.ranking))
 
