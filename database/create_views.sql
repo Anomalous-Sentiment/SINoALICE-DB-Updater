@@ -25,6 +25,7 @@ CREATE OR REPLACE VIEW gc_matchups_id AS
 DROP VIEW IF EXISTS gc_matchups;
 -- View to get table of guild matchups
 CREATE OR REPLACE VIEW gc_matchups AS 
+-- CTE to fill in missing GC days
  WITH cte AS (
       SELECT gdays.gcday, in_gld.guilddataid
       FROM gc_days gdays
