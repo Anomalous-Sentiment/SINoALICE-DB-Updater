@@ -24,8 +24,13 @@ CREATE OR REPLACE VIEW gc_matchups_id AS
     
 DROP VIEW IF EXISTS gc_matchups;
 -- View to get table of guild matchups
-CREATE OR REPLACE VIEW gc_matchups AS
-    SELECT c.*, ARRAY_AGG(dt.point ORDER BY dt.updated_at) daily_lf, daily_data.opp_lf from crosstab(
+CREATE OR REPLACE VIEW gc_matchups AS 
+ WITH cte AS (
+      SELECT gdays.gcday, in_gld.guilddataid
+      FROM gc_days gdays
+      CROSS JOIN guilds in_gld
+    )
+    SELECT c.*, ARRAY_AGG(COALESCE(dt.point, 0) ORDER BY dt.updated_at) daily_lf, daily_data.opp_lf from crosstab(
         -- crosstab to get all guild matchups each day in own column
         $$
             SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
@@ -48,29 +53,26 @@ CREATE OR REPLACE VIEW gc_matchups AS
             SELECT DISTINCT gcday FROM gc_days ORDER BY 1
         $$
     ) as c(rn TEXT[], gc_num SMALLINT, guild_id INTEGER, timeslot SMALLINT, guild TEXT, total_lf BIGINT, day_1 TEXT, day_2 TEXT, day_3 TEXT, day_4 TEXT, day_5 TEXT, day_6 TEXT)
+    RIGHT JOIN cte ON cte.guilddataid = c.guild_id
 -- Left join with GC data to get the LF of the guilds during each day of GC
-LEFT JOIN gc_data dt ON c.gc_num = dt.gvgeventid AND dt.guilddataid = c.guild_id
+LEFT JOIN gc_data dt ON c.gc_num = dt.gvgeventid AND dt.guilddataid = c.guild_id AND dt.gcday = cte.gcday
 -- Inner join to get the array of LF of the opponents each guild faced for each day of GC
 INNER JOIN (
     -- Table aggregating the opponent LF into a sub array
     SELECT pred.gvgeventid, pred.guilddataid, array_agg(COALESCE(lf_data.lf_gain, 0) ORDER BY pred.gcday ASC) AS opp_lf FROM (
-        -- Query to get the opponent guilds of every guild in GC. If no prediction was made for a guild, make the opponent guild for that day NULL (To take care of case when a guild somehow isn't found in GC rankings, but found later on)
-        SELECT pr.guilddataid, events.gvgeventid, sub_days.gcday, new_pred.opponentguilddataid
-        FROM gc_events events
-        -- Cross joins to get every gc event and GC day combination
-        CROSS JOIN gc_days sub_days
-        CROSS JOIN (
-            -- Join to get the unique guilddataids of each GC (Partipating guilds of each GC) combined with the combinations of GC and GC days
-            SELECT DISTINCT(pred.gvgeventid, pred.guilddataid), pred.guilddataid
-            FROM gc_predictions pred
-        ) pr
-        -- Join with gc_predictions again to get the opponentguilddataids. Guilds with no predictions for any day during GC will default to NULL opponentguilddataids
-        LEFT JOIN gc_predictions new_pred USING (guilddataid, gvgeventid, gcday)
+      SELECT gvgeventid, gcday, guilddataid, opponentguilddataid
+      FROM cte
+      LEFT JOIN (
+        SELECT FIRST_VALUE(in_pred.gvgeventid) OVER (PARTITION BY in_pred.gvgeventid, in_pred.guilddataid ORDER BY in_pred.gvgeventid IS NULL) AS gvgeventid, in_pred.guilddataid, ARRAY_AGG(gcday)
+        FROM gc_predictions in_pred
+        GROUP BY in_pred.gvgeventid, in_pred.guilddataid
+      ) sub_pred USING (guilddataid)
+      LEFT JOIN gc_predictions sec_pred USING (gvgeventid, guilddataid, gcday)
     ) pred
     -- Join to get the LF gain of the opponent guild for the day (Inclusive of Win/loss bonus)
     LEFT JOIN (
         -- Query to get the LF gain of each guild
-        SELECT gld.guilddataid, inner_days.gcday, FIRST_VALUE(sub_gc.gvgeventid) OVER (PARTITION BY sub_gc.gvgeventid, gld.guilddataid ORDER BY sub_gc.gvgeventid IS NULL) AS gvgeventid, COALESCE(sub_gc.point, 0) AS lf, COALESCE(MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday) - MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, guilddataid) ORDER BY sub_gc.guilddataid, inner_days.gcday ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), sub_gc.point) AS "lf_gain" FROM guilds gld
+        SELECT gld.guilddataid, inner_days.gcday, FIRST_VALUE(sub_gc.gvgeventid) OVER (PARTITION BY sub_gc.gvgeventid, gld.guilddataid ORDER BY sub_gc.gvgeventid IS NULL) AS gvgeventid, COALESCE(sub_gc.point, 0) AS lf, COALESCE(MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, gld.guilddataid) ORDER BY gld.guilddataid, inner_days.gcday) - MAX(sub_gc.point) OVER (PARTITION BY (sub_gc.gvgeventid, gld.guilddataid) ORDER BY gld.guilddataid, inner_days.gcday ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), sub_gc.point) AS "lf_gain" FROM guilds gld
         CROSS JOIN gc_days inner_days
         LEFT JOIN gc_data sub_gc USING (guilddataid, gcday)
     ) lf_data ON (pred.opponentguilddataid = lf_data.guilddataid ) AND pred.gvgeventid = lf_data.gvgeventid AND lf_data.gcday = pred.gcday
