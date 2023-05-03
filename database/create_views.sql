@@ -33,7 +33,7 @@ CREATE OR REPLACE VIEW gc_matchups AS
       LEFT JOIN gc_data gt USING (guilddataid)
       ORDER BY gvgeventid, in_gld.guilddataid, gdays.gcday
     )
-    SELECT c.*, ARRAY_AGG(COALESCE(dt.point, 0) ORDER BY dt.updated_at) FILTER (WHERE cte.gcday <= cte.last_day AND cte.gvgeventid = c.gc_num) daily_lf, daily_data.opp_lf from crosstab(
+    SELECT c.*, ARRAY_AGG(COALESCE(dt.point, 0) ORDER BY dt.gcday ASC) FILTER (WHERE dt.gcday <= cte.last_day AND dt.gvgeventid = c.gc_num) daily_lf, daily_data.opp_lf from crosstab(
         -- crosstab to get all guild matchups each day in own column
         $$
             SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
