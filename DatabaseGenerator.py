@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Table, MetaData, select, delete
+from sqlalchemy import create_engine, Table, MetaData, select, delete, asc
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2
 from dotenv import load_dotenv
@@ -58,13 +58,16 @@ class DatabaseGenerator():
             print(ts_guild_list)
             # Iterate through each guild in timeslot
             for guild in ts_guild_list:
+                # Create a lf generator for the current guild
+                lf_generator = self._next_lf_generator()
                 # Loop for each day of GC
                 for day in range(1, 7):
+
                     new_row = {
                         'gvgeventid': guild[0],
                         'gcday': day,
                         'guilddataid': guild[1],
-                        'point': random.randint(0, 1000000000000),
+                        'point': next(lf_generator),
                         'gvgtimetype': guild[3]
                     }
                     generated_data.append(new_row)
@@ -74,7 +77,7 @@ class DatabaseGenerator():
         return generated_data
 
     def _get_day_0_data(self, gc_num):
-        get_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype).where(self.day_0_table.c.gvgeventid == gc_num)
+        get_statement = select(self.day_0_table.c.gvgeventid, self.day_0_table.c.guilddataid, self.day_0_table.c.ranking, self.day_0_table.c.gvgtimetype).where(self.day_0_table.c.gvgeventid == gc_num).order_by(asc(self.day_0_table.c.ranking))
         
         # Execute command
         with self.engine.connect() as conn:
@@ -136,3 +139,9 @@ class DatabaseGenerator():
         with self.engine.connect() as conn:
             conn.execute(update_statement, copied_data)
             conn.commit()
+
+    def _next_lf_generator(self):
+        next_lf = random.randint(0, 100000000)
+        while True:
+            yield next_lf
+            next_lf = next_lf + random.randint(0, 100000000)
