@@ -586,10 +586,6 @@ class DatabaseUpdater():
             # Update db with GC dates
             self._update_db_gc_dates(curr_gc, date_dict)
 
-            # Initialise the day 0 guild list if current date is after start date (day 1), but before second day of GC. In other words, if it is the first day of GC
-            if datetime.utcnow() > start_date and datetime.utcnow() < start_date + timedelta(days=1):
-                self._init_day_0_gc_list(curr_gc)
-
             # Remove all previously scheduled gc updates
             for job in self.job_list:
                 job.remove()
@@ -636,6 +632,8 @@ class DatabaseUpdater():
     def _day_2_update(self, gc_num):
         try:
             log.info('Running day 2 GC rank update...')
+
+            # Remove all predictions for this GC day 1 (In case predictions were made before day 1 of GC)
 
             # Update db to ensure database is up to date, passing the day of the results
             self._full_gc_rank_update(1)
@@ -713,6 +711,58 @@ class DatabaseUpdater():
 
         return match_list
 
+    def _pre_gc_prediction(self, gc_num):
+        # Function to run before day 1 of GC
+
+        # Get the current guild list and timeslots
+
+        # Run the initial matchmaking for each TS
+
+        # Insert results into DB
+
+
+    def _predict_all_ts_matches(self, full_guild_list, timeslots):
+        # Filter the guild list and run the initial matchmaking function for each TS
+
+        # ITerate through each TS and filter guild list by the selected TS
+        for gvgtimetype, in timeslots:
+            # Define a filter function for the TS
+            def _filter_func(curr_guild):
+                # Unpack guild data tuple
+                (gc_num, guild_id, guild_timetype, ranking) = curr_guild
+                # Check if gvgtimetype matches the one in the outer loop
+                if gvgtimetype == guild_timetype:
+                    # Guild in the time slot
+                    return True
+                else:
+                    return False
+
+            # Perform the filter. It should preserve order
+            filtered_list = filter(_filter_func, full_guild_list)
+
+            converted_list = []
+            for gc_num, guild_id, timetype, ranking  in filtered_list:
+                new_dict = {
+                    'gcday': 1, # This function is only ever used for day 1
+                    'gvgeventid': gc_num,
+                    'guilddataid': guild_id,
+                    'ranking': ranking,
+                    'gvgtimetype': timetype
+                }
+                converted_list.append(new_dict)
+
+            # Pass the TS guild list into the initial matchmaking function
+            matches = self._initial_gc_prediction(converted_list)
+            log.info(f'Matched a total of {len(matches)} matches for time type: {gvgtimetype}')
+
+            # Add to the match list
+            match_list.extend(matches)
+
+        log.info(f'Matchmaking complete. Number of matches calculated:{len(matches)}')
+        
+
+
+
     def _update_day_1_matches(self, gc_num):
         log.info('Running day 1 match interpolation...')
         # Function to update the day 1 matchmaking list based on guilds participating in GC
@@ -736,41 +786,8 @@ class DatabaseUpdater():
         match_list = []
 
         log.info('Filtering guilds for each timeslot and performing matchmaking...')
-        # ITerate through each TS and filter guild list by the selected TS
-        for gvgtimetype, in timeslots:
-            # Define a filter function for the TS
-            def _filter_func(curr_guild):
-                # Unpack guild data tuple
-                (gc_num, guild_id, guild_timetype, ranking) = curr_guild
-                # Check if gvgtimetype matches the one in the outer loop
-                if gvgtimetype == guild_timetype:
-                    # Guild in the time slot
-                    return True
-                else:
-                    return False
+        match_list = self._predict_all_ts_matches(participating_guild_list, timeslots)
 
-            # Perform the filter. It should preserve order
-            filtered_list = filter(_filter_func, participating_guild_list)
-
-            converted_list = []
-            for gc_num, guild_id, timetype, ranking  in filtered_list:
-                new_dict = {
-                    'gcday': 1, # This function is only ever used for day 1
-                    'gvgeventid': gc_num,
-                    'guilddataid': guild_id,
-                    'ranking': ranking,
-                    'gvgtimetype': timetype
-                }
-                converted_list.append(new_dict)
-
-            # Pass the TS guild list into the initial matchmaking function
-            matches = self._initial_gc_prediction(converted_list)
-            log.info(f'Matched a total of {len(matches)} matches for time type: {gvgtimetype}')
-
-            # Add to the match list
-            match_list.extend(matches)
-
-        log.info(f'Matchmaking complete. Number of matches calculated:{len(matches)}')
         # Update the db with the matched pairs
         insert_gc_matches = insert(self.match_table)
         update_gc_matches = {col.name: col for col in insert_gc_matches.excluded if col.name not in ('gcday', 'gvgeventid', 'guilddataid')}
