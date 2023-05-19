@@ -759,7 +759,7 @@ class DatabaseUpdater():
             match_list.extend(matches)
 
         log.info(f'Matchmaking complete. Number of matches calculated:{len(matches)}')
-        return matches
+        return match_list
 
     def _update_day_1_matches(self, gc_num):
         log.info('Running day 1 match interpolation...')
