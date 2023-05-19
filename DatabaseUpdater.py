@@ -723,6 +723,7 @@ class DatabaseUpdater():
 
     def _predict_all_ts_matches(self, full_guild_list, timeslots):
         # Filter the guild list and run the initial matchmaking function for each TS
+        match_list = []
 
         # ITerate through each TS and filter guild list by the selected TS
         for gvgtimetype, in timeslots:
