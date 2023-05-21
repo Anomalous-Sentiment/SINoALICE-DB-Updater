@@ -586,7 +586,7 @@ class DatabaseUpdater():
             # Update db with GC dates
             self._update_db_gc_dates(curr_gc, date_dict)
 
-            if datetime.utcnow() > start_date and datetime.utcnow() < start_date + imedelta(days=1):
+            if datetime.utcnow() > start_date and datetime.utcnow() < start_date + timedelta(days=1):
                 # Run the initial day 1 predictions if on the first day of GC (This function runs daily. Relies on the guild table being updated immediately before this function is called)
                 self._pre_gc_prediction(curr_gc)
 
