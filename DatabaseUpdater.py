@@ -712,6 +712,7 @@ class DatabaseUpdater():
         return match_list
 
     def _pre_gc_prediction(self, gc_num):
+        pass
         # Function to run before day 1 of GC
 
         # Get the current guild list and timeslots
@@ -998,7 +999,8 @@ class DatabaseUpdater():
                                 # If none of the if conditions met, then it is a non-leaf node that cannot match. Do nothing.
                             else:
                                 # index b out of range, Match guild at index a with None (Not sure what happens in this situation yet)
-                                self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
+                                if self._can_match(guilddataid, None, matched_list, guild_matches_dict):
+                                    self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
 
         return unmatched_nodes_list
 
@@ -1033,6 +1035,8 @@ class DatabaseUpdater():
         return False
 
     def _add_to_predicted_matches(self, predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id):
+        if (guilddataid is None and prospective_opp_id is None):
+            breakpoint()
         # Add to match list
         new_match = {
             'gcday': day + 1,
