@@ -591,15 +591,11 @@ class DatabaseUpdater():
                 self._pre_gc_prediction(curr_gc)
 
             # Remove all previously scheduled gc updates
-            for job in self.job_list:
-                job.remove()
-
-            # Schedule a pre day 1 prediction
-            #day_1_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=3)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
-            #self.job_list.append(day_1_job)
+            #for job in self.job_list:
+            #    job.remove()
 
             # Schedule the initial gc rank update on day 2, 1 min after reset
-            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=3)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update')
+            day_2_job = self.sched.add_job(self._day_2_update, run_date=(start_date + timedelta(days=1, minutes=3)), args=[curr_gc], id=f'gc_{curr_gc}_day_2_update', replace_existing=True)
             self.job_list.append(day_2_job)
 
             gc_timeslots = self._get_gc_timeslots()
@@ -629,7 +625,7 @@ class DatabaseUpdater():
                     # Check if update time is after current date. Only add to scheduler if after current timedate
                     if datetime.utcnow() < update_datetime:
                         # Schedule update job and add to list. The day is increased by 1, to make it indexed by 1, so 0 idx is day 1
-                        new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict], id=f'day_{day}_ts_{timeslot}_update')
+                        new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, day + 1, timeslot, predict], id=f'day_{day}_ts_{timeslot}_update', replace_existing=True)
                         self.job_list.append(new_job)
 
                         log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
