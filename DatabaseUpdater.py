@@ -994,19 +994,17 @@ class DatabaseUpdater():
             # Get the left child indexes
             (index_a, index_b) = child_node_list.pop(0)
 
-            # Iterate through each remaining node and calculate their children nodes and enqueue to list
+            # Iterate through each remaining node and calculate their children nodes and enqueue to curr tree level list
+            temp_node_list = [child_node_list.pop(0)]
             if len(remaining_node_list) > 0:
-                temp_node_list = []
                 # Iterate through the nodes in the last level of the node list
                 for node in remaining_node_list[-1]:
                     (curr_node_idx_a, curr_node_idx_b) = node
                     child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
                     temp_node_list.extend(child_nodes)
-                # Add the nw level to the node list
-                remaining_node_list.append(temp_node_list)
 
-            # Add the right child to the remaining node list
-            remaining_node_list.append(child_node_list)
+            # Add the nw level to the node list
+            remaining_node_list.append(temp_node_list)
 
             (gvgeventid, day, guilddataid, curr_point) = guild_list[index_a]
 
@@ -1081,8 +1079,6 @@ class DatabaseUpdater():
         return False
 
     def _add_to_predicted_matches(self, predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id):
-        if (guilddataid is None and prospective_opp_id is None):
-            breakpoint()
         # Add to match list
         new_match = {
             'gcday': day + 1,
