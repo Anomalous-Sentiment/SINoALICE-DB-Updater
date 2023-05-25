@@ -1000,8 +1000,18 @@ class DatabaseUpdater():
                 # Iterate through the nodes in the last level of the node list
                 for node in remaining_node_list[-1]:
                     (curr_node_idx_a, curr_node_idx_b) = node
-                    child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
-                    temp_node_list.extend(child_nodes)
+                    if curr_node_idx_a < len(guild_list):
+                        (gvgeventid, day, guilddataid, curr_point) = guild_list[curr_node_idx_a]
+                        if curr_node_idx_b < len(guild_list):
+                            (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[curr_node_idx_b]
+                            # Check if the guilds in the node can match
+                            if not self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict):
+                                # If can't match, calculate the children nodes
+                                child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
+                                temp_node_list.extend(child_nodes)
+
+                            # If can match, no need to calculate the children nnode indexes (They'll pass on to the next node that can't match)
+
 
             # Add the nw level to the node list
             remaining_node_list.append(temp_node_list)
