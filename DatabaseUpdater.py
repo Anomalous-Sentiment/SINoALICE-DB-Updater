@@ -619,7 +619,7 @@ class DatabaseUpdater():
                         update_datetime = update_datetime.replace(hour=utc_time.hour, minute=utc_time.minute + 33, second=utc_time.second)
 
                     # Check if current day is before final day
-                    if day < prelim_days:
+                    if day < prelim_days - 1:
                         predict = True
                     else:
                         predict = False
