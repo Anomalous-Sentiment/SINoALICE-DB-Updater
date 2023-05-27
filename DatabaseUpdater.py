@@ -935,12 +935,14 @@ class DatabaseUpdater():
         # Iterate through the guild list to match every guild
         for index in range(0, len(guild_list), 1):
             # Wrapper for recursive function. The function will append to the predicted_match_list passed in
-            self._recurse_matchups_root(0, 1, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
+            match_tree = self._recurse_matchups_root(0, 1, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::])
+
+            #breakpoint()
 
             # Iterate through and check the match nodes added from the previous guild matchup until all are matched (unmatched_node_list may increase in length here)
-            while len(unmatched_nodes_list) > 0:
-                (index_a, index_b) = unmatched_nodes_list.pop(0)
-                self._recurse_matchups_root(index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
+            #while len(unmatched_nodes_list) > 0:
+            #    (index_a, index_b) = unmatched_nodes_list.pop(0)
+            #    self._recurse_matchups_root(index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list[index::], unmatched_nodes_list)
 
         return predicted_match_list
 
@@ -951,7 +953,7 @@ class DatabaseUpdater():
             yield next_idx
             next_idx += 1
 
-    def _recurse_matchups_root(self, index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list, unmatched_nodes_list):
+    def _recurse_matchups_root(self, index_a, index_b, guild_matches_dict, matched_list, predicted_match_list, guild_list):
         gen = self._next_idx_generator(index_b)
         # Base case 1: End of even numbered list. No guilds left to match
         if index_a >= len(guild_list):
@@ -980,81 +982,46 @@ class DatabaseUpdater():
         if valid_match:
             # Add to predicted match list
             self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
+        else:
+            # If not valid, add node to first tree level, and generate children nodes for the final level of the tree
+            remaining_node_list.append([(0, 1)])
+            leaf_nodes_matched = [False]
 
+            # While there exists a node in the final level that is not matched, generate a new level of the tree
+            while not all(leaf_nodes_matched):
+                leaf_nodes_matched = []
+                final_level_nodes = remaining_node_list[-1]
+                temp_node_list = []
 
-        # Repeat while guild at index_a is not matched
-        while (not valid_match and index_b < len(guild_list) and index_a < len(guild_list)):
-            prospective_opp_id = None
-
-            # Calculate child nodes and queue the right child to node list
-            child_node_list = self._calculate_children_node_indexes(gen, index_a, index_b)
-
-            # Get the left child indexes
-            (index_a, index_b) = child_node_list.pop(0)
-
-            # Iterate through each remaining node and calculate their children nodes and enqueue to curr tree level list
-            temp_node_list = [child_node_list.pop(0)]
-            if len(remaining_node_list) > 0:
-                # Iterate through the nodes in the last level of the node list
-                for node in remaining_node_list[-1]:
+                # Check if each node in final level can be matched
+                for node in final_level_nodes:
+                    #breakpoint()
                     (curr_node_idx_a, curr_node_idx_b) = node
+                    # Check if indexes are valid
                     if curr_node_idx_a < len(guild_list):
                         (gvgeventid, day, guilddataid, curr_point) = guild_list[curr_node_idx_a]
                         if curr_node_idx_b < len(guild_list):
                             (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[curr_node_idx_b]
                             # Check if the guilds in the node can match
-                            if not self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict):
-                                # If can't match, calculate the children nodes
+                            if self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict):
+                                # If can, match
+                                self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
+                                leaf_nodes_matched.append(True)
+                            elif guilddataid not in matched_list:
+                                # If can't match, and hasn't been matched for this GC day yet
+                                # Generate children nodes and add to new level list
                                 child_nodes = self._calculate_children_node_indexes(gen, curr_node_idx_a, curr_node_idx_b)
                                 temp_node_list.extend(child_nodes)
+                                leaf_nodes_matched.append(False)
+                            # Else has already been matched for this day. Ignore
+                        else:
+                            # second index out of range (End of list). Match with none if possible
+                            if self._can_match(guilddataid, None, matched_list, guild_matches_dict):
+                                self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
 
-                            # If can match, no need to calculate the children nnode indexes (They'll pass on to the next node that can't match)
+                remaining_node_list.append(temp_node_list)
 
-
-            # Add the nw level to the node list
-            remaining_node_list.append(temp_node_list)
-
-            (gvgeventid, day, guilddataid, curr_point) = guild_list[index_a]
-
-            # Check if new match is possible
-            if index_b < len(guild_list):
-                (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[index_b]
-                valid_match = self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict)
-            else:
-                #self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
-                prospective_opp_id = None
-                valid_match = True
-
-            if valid_match:
-                # If can match, add to predicted list and iterate through the right node list (for each loop)
-                self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
-
-                for level_num, tree_level in enumerate(remaining_node_list):
-                    for node in tree_level:
-                        # Get each remaining node in list, check if the guilds contained in the node can match
-                        (child_idx_a, child_idx_b) = node
-                        # Get the guilds (Reusing variables. Bad practice I know)
-                        if child_idx_a < len(guild_list):
-                            (gvgeventid, day, guilddataid, curr_point) = guild_list[child_idx_a]
-                            if child_idx_b < len(guild_list):
-                                (gvgeventid, day, prospective_opp_id, opp_point) = guild_list[child_idx_b]
-
-                                # Check if can match
-                                if self._can_match(guilddataid, prospective_opp_id, matched_list, guild_matches_dict):
-                                    # Match the guilds
-                                    self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, prospective_opp_id)
-                                elif level_num == len(remaining_node_list) - 1:
-                                    # Cannot match and is at last level of the tree
-                                    # Add to list of unmatched nodes to run through another pass of matching function later
-                                    unmatched_nodes_list.append(node)
-
-                                # If none of the if conditions met, then it is a non-leaf node that cannot match. Do nothing.
-                            else:
-                                # index b out of range, Match guild at index a with None (Not sure what happens in this situation yet)
-                                if self._can_match(guilddataid, None, matched_list, guild_matches_dict):
-                                    self._add_to_predicted_matches(predicted_match_list, matched_list, day, gvgeventid, guilddataid, None)
-
-        return unmatched_nodes_list
+        return remaining_node_list
 
     def _calculate_children_node_indexes(self, gen, index_a, index_b):
         # Convert form 0 indexed to 1 indexed for working
