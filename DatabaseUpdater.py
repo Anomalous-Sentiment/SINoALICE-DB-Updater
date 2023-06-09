@@ -1,4 +1,5 @@
 from sinoalice.api.GuildAPI import GuildAPI
+from sinoalice.api.BaseAPI import ServerMaintenenceException
 from sinoalice.api.PlayerAPI import PlayerAPI
 from sinoalice.api.GranColoAPI import GranColoAPI
 from sinoalice.api.NoticesParser import NoticesParser
@@ -432,7 +433,7 @@ class DatabaseUpdater():
         log.info('Guild Insert complete')
 
         self._insert_gc_data_db(full_rank_list, day)
-#
+
         log.info('Full GC rank update complete')
 
     def _daily_update(self):
@@ -464,6 +465,14 @@ class DatabaseUpdater():
                 self._schedule_gc_updates(gc_dates)
 
             log.info('Daily update complete')
+        except ServerMaintenenceException as server_err:
+            # Schedule to run again in an hour
+            next_datetime = datetime.utcnow() + timedelta(hours=1)
+            self.sched.add_job(self._daily_update, 'date', )
+
+            err_msg = f"Daily update failed due to server maintenence. Rescheduling to {str(next_datetime)}"
+            tb = traceback.format_exc()
+            log_exception(err_msg, tb)
         except:
             tb = traceback.format_exc()
             log_exception('Daily update failed.', tb)
