@@ -468,7 +468,7 @@ class DatabaseUpdater():
         except ServerMaintenenceException as server_err:
             # Schedule to run again in an hour
             next_datetime = datetime.utcnow() + timedelta(hours=1)
-            self.sched.add_job(self._daily_update, 'date', )
+            self.sched.add_job(self._daily_update, 'date', run_date=next_datetime)
 
             err_msg = f"Daily update failed due to server maintenence. Rescheduling to {str(next_datetime)}"
             tb = traceback.format_exc()
