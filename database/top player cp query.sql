@@ -2,6 +2,7 @@ SELECT
 	players.username AS "Name", 
 	players.level AS "Level", 
 	players.guildname AS "Guild", 
+	to_char(players.maxhp, 'FM9,999,999') AS "Total HP", 
 	to_char(players.totalpower, 'FM9,999,999') AS "Total CP", 
 	to_char(players.attacktotalpower, 'FM9,999,999') AS "P.Atk", 
 	to_char(players.defencetotalpower, 'FM9,999,999') AS "P.Def", 
