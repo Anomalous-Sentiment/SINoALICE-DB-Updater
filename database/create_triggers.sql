@@ -102,7 +102,7 @@ CREATE TRIGGER max_cp_upd
     REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
     FOR EACH STATEMENT EXECUTE FUNCTION update_highest_cp();
 
-DROP TRIGGER IF EXISTS max_cp_upd ON base_player_data;
+DROP TRIGGER IF EXISTS max_cp_ins ON base_player_data;
 CREATE TRIGGER max_cp_ins
     AFTER INSERT ON base_player_data
     REFERENCING NEW TABLE AS new_table
