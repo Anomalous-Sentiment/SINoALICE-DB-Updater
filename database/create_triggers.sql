@@ -72,3 +72,38 @@ CREATE TRIGGER player_data_upd
     AFTER UPDATE ON extra_player_data
     REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
     FOR EACH STATEMENT EXECUTE FUNCTION update_player_activity();
+
+
+CREATE OR REPLACE FUNCTION update_highest_cp() RETURNS TRIGGER AS $update_highest_cp$
+    BEGIN
+        -- Insert into max cp table. Overwrite/update when totalPower is greater than old value
+        INSERT INTO players_max_cp
+            SELECT userId, level, currentJobMstId, currentCharacterMstId, totalPower, attackTotalPower, defenceTotalPower, magicAttackTotalPower, magicDefenceTotalPower, maxHp, baseCharacterMstId
+            FROM new_table
+        ON CONFLICT (userid) DO UPDATE SET
+            level = EXCLUDED.level,
+            currentJobMstId = EXCLUDED.currentJobMstId,
+            currentCharacterMstId = EXCLUDED.currentCharacterMstId,
+            totalPower = EXCLUDED.totalPower,
+            attackTotalPower = EXCLUDED.attackTotalPower,
+            defenceTotalPower = EXCLUDED.defenceTotalPower,
+            magicAttackTotalPower = EXCLUDED.magicAttackTotalPower,
+            magicDefenceTotalPower = EXCLUDED.magicDefenceTotalPower,
+            maxHp = EXCLUDED.maxHp,
+            baseCharacterMstId = EXCLUDED.baseCharacterMstId
+        WHERE players_max_cp.totalPower < EXCLUDED.totalPower;
+        RETURN NULL;
+    END;
+$update_highest_cp$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS max_cp_upd ON base_player_data;
+CREATE TRIGGER max_cp_upd
+    AFTER UPDATE ON base_player_data
+    REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
+    FOR EACH STATEMENT EXECUTE FUNCTION update_highest_cp();
+
+DROP TRIGGER IF EXISTS max_cp_upd ON base_player_data;
+CREATE TRIGGER max_cp_ins
+    AFTER INSERT ON base_player_data
+    REFERENCING NEW TABLE AS new_table
+    FOR EACH STATEMENT EXECUTE FUNCTION update_highest_cp();

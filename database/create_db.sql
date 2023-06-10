@@ -93,6 +93,26 @@ CREATE TABLE base_player_data
     PRIMARY KEY(userId)
 );
 
+DROP TABLE IF EXISTS players_max_cp;
+CREATE TABLE players_max_cp
+(
+    userId BIGINT,
+    level SMALLINT,
+    currentJobMstId INTEGER,
+    currentCharacterMstId INTEGER,
+    totalPower INTEGER,
+    attackTotalPower INTEGER,
+    defenceTotalPower INTEGER,
+    magicAttackTotalPower INTEGER,
+    magicDefenceTotalPower INTEGER,
+    maxHp INTEGER,
+    baseCharacterMstId INTEGER,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+    CONSTRAINT fk_max_user_id
+        FOREIGN KEY (userId) REFERENCES base_player_data (userId),
+    PRIMARY KEY(userId)
+);
+
 DROP TABLE IF EXISTS extra_player_data;
 CREATE TABLE extra_player_data
 (
