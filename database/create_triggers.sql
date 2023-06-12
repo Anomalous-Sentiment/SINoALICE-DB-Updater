@@ -15,7 +15,7 @@ CREATE OR REPLACE FUNCTION update_player_activity() RETURNS TRIGGER AS $activity
                             (SELECT MIN(lastAccessTime)::DATE FROM extra_player_data) + ((n+1) || ' days')::interval end_time
                         from generate_series(0, ((select NOW()::date - min(lastAccessTime)::date from extra_player_data)), 1) n
                     )
-                    SELECT CURRENT_DATE, d.start_time::DATE, COUNT(ex.userId)
+                    SELECT CURRENT_DATE, d.start_time ::TEXT, COUNT(ex.userId)
                     FROM extra_player_data ex
                     RIGHT JOIN day_intervals d
                         ON ex.lastAccessTime::DATE >= d.start_time
@@ -35,7 +35,7 @@ CREATE OR REPLACE FUNCTION update_player_activity() RETURNS TRIGGER AS $activity
                             (SELECT MIN(lastAccessTime)::DATE FROM extra_player_data) + ((n+1) || ' days')::interval end_time
                         from generate_series(0, ((select NOW()::date - min(lastAccessTime)::date from extra_player_data)), 1) n
                     )
-                    SELECT d.start_time ::DATE
+                    SELECT d.start_time ::TEXT
                     FROM extra_player_data ex
                     RIGHT JOIN day_intervals d
                         ON ex.lastAccessTime::DATE >= d.start_time
@@ -48,13 +48,13 @@ CREATE OR REPLACE FUNCTION update_player_activity() RETURNS TRIGGER AS $activity
                     GROUP BY d.start_time
                     ORDER BY 1 DESC
                 $$
-            ) AS ct("curr_date" DATE, "since_1_day" INTEGER, "since_3_days" INTEGER, "since_5_days" INTEGER, "since_7_days" INTEGER, "since_14_days" INTEGER)
+            ) AS ct("curr_date" DATE, "since_1_day" INTEGER, "since_3_days" INTEGER, "since_5_days" INTEGER, "since_7_days" INTEGER, "since_14_days" INT)
             ON CONFLICT (snapshot_date) DO UPDATE SET 
-                logged_within_1_day = EXCLUDED.logged_within_1_day,
-                logged_within_3_days = EXCLUDED.logged_within_3_days,
-                logged_within_5_days = EXCLUDED.logged_within_5_days,
-                logged_within_7_days = EXCLUDED.logged_within_7_days,
-                logged_within_14_days = EXCLUDED.logged_within_14_days;
+            logged_within_1_day = EXCLUDED.logged_within_1_day,
+            logged_within_3_days = EXCLUDED.logged_within_3_days,
+            logged_within_5_days = EXCLUDED.logged_within_5_days,
+            logged_within_7_days = EXCLUDED.logged_within_7_days,
+            logged_within_14_days = EXCLUDED.logged_within_14_days;
         RETURN NULL; -- result is ignored since this is an AFTER trigger
     END;
 $activity_update$ LANGUAGE plpgsql;
@@ -107,3 +107,32 @@ CREATE TRIGGER max_cp_ins
     AFTER INSERT ON base_player_data
     REFERENCING NEW TABLE AS new_table
     FOR EACH STATEMENT EXECUTE FUNCTION update_highest_cp();
+
+
+
+CREATE OR REPLACE FUNCTION update_extra_highest_cp() RETURNS TRIGGER AS $update_extra_highest_cp$
+    BEGIN
+        -- Insert into max cp table. Overwrite/update when totalPower is greater than old value
+        INSERT INTO extra_players_max_cp
+            SELECT userId, currentjobroletype, currentjobroleposition, currenttotalpower
+            FROM new_table
+        ON CONFLICT (userid) DO UPDATE SET
+            currentjobroletype = EXCLUDED.currentjobroletype,
+            currentjobroleposition = EXCLUDED.currentjobroleposition,
+            currenttotalpower = EXCLUDED.currenttotalpower
+        WHERE extra_players_max_cp.currenttotalpower < EXCLUDED.currenttotalpower;
+        RETURN NULL;
+    END;
+$update_extra_highest_cp$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS extra_max_cp_upd ON extra_player_data;
+CREATE TRIGGER extra_max_cp_upd
+    AFTER UPDATE ON extra_player_data
+    REFERENCING OLD TABLE AS old_table NEW TABLE AS new_table
+    FOR EACH STATEMENT EXECUTE FUNCTION update_extra_highest_cp();
+
+DROP TRIGGER IF EXISTS extra_max_cp_ins ON extra_player_data;
+CREATE TRIGGER extra_max_cp_ins
+    AFTER INSERT ON extra_player_data
+    REFERENCING NEW TABLE AS new_table
+    FOR EACH STATEMENT EXECUTE FUNCTION update_extra_highest_cp();
