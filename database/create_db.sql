@@ -113,6 +113,19 @@ CREATE TABLE players_max_cp
     PRIMARY KEY(userId)
 );
 
+DROP TABLE IF EXISTS extra_players_max_cp;
+CREATE TABLE extra_players_max_cp
+(
+    userId BIGINT,
+    currentjobroletype SMALLINT,
+    currentjobroleposition SMALLINT,
+    currenttotalPower INTEGER,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+    CONSTRAINT fk_extra_max_user_id
+        FOREIGN KEY (userId) REFERENCES base_player_data (userId),
+    PRIMARY KEY(userId)
+);
+
 DROP TABLE IF EXISTS extra_player_data;
 CREATE TABLE extra_player_data
 (
