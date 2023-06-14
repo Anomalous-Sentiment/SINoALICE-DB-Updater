@@ -1122,3 +1122,94 @@ class DatabaseUpdater():
             conn.execute(update_statement)
             conn.commit()
         log.info('Insert successful')
+
+    def _revise_final_gc_rankings(self, gc_num, day):
+        # Get day GC rankings for the specified gc, ordered by descending lf (point)
+        select_rankings_stmt = select(self.gc_data_table.c.gvgeventid, self.gc_data_table.c.gcday, self.gc_data_table.c.guilddataid, self.gc_data_table.c.point, self.gc_data_table.c.ranking, self.gc_data_table.c.rankinginbattleterm, self.gc_data_table.c.gvgtimetype).where(and_(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gcday == day)).order_by(desc(self.gc_data_table.c.point))
+        with self.engine.connect() as conn:
+            rank_list = conn.execute(select_rankings_stmt).all()
+            conn.commit()
+        log.info('Retrieval successful')
+
+        converted_list = []
+
+        # Convert to a list o fficts
+        for gvgeventid, gcday, guilddataid, point, ranking, rankinginbattleterm, gvgtimetype in rank_list:
+            new_row = {
+                'gvgeventid': gvgeventid,
+                'gcday': gcday,
+                'guilddataid': guilddataid,
+                'point': point,
+                'ranking': ranking,
+                'rankinginbattleterm': rankinginbattleterm,
+                'gvgtimetype': gvgtimetype
+            }
+            converted_list.append(new_row)
+
+        # Revise overall GC ranks of guilds
+        converted_list = self._rank_guilds(converted_list, 'ranking')
+
+        with open('overall_revised.json', 'w') as json_file:
+            json.dump(converted_list, json_file, indent=4)
+
+        final_list = []
+
+        for ts in [4, 8, 16, 32, 64, 128, 256, 512, 2048, 4096]:
+            # Define a filter function for the TS
+            def _filter_func(curr_guild):
+                # Unpack guild data tuple
+                #(gvgeventid, gcday, guilddataid, point, ranking, rankinginbattleterm, gvgtimetype) = curr_guild
+                # Check if gvgtimetype matches the one in the outer loop
+                if curr_guild['gvgtimetype'] == ts:
+                    # Guild in the time slot
+                    return True
+                else:
+                    return False        # Iterate through all rows and manually calculate & update the final overall ranking
+
+            # Perform the filter. It should preserve order
+            filtered_list = list(filter(_filter_func, converted_list))
+
+            # Revise the rankinginbattleterm for the timeslot
+            temp_list = self._rank_guilds(filtered_list, 'rankinginbattleterm')
+
+            final_list.extend(temp_list)
+
+        with open('battleterm_revised.json', 'w') as json_file:
+            json.dump(final_list, json_file, indent=4)
+
+        insert_rev_vals = insert(self.gc_data_table).values(final_list)
+        update_rev_vals = {col.name: col for col in insert_rev_vals.excluded if col.name not in ('guilddataid', 'gvgeventid', 'gcday')}
+        update_statement = insert_rev_vals.on_conflict_do_update(
+            index_elements=['guilddataid', 'gvgeventid', 'gcday'], 
+            set_=update_rev_vals
+        )
+
+        # Insert back into database
+        log.info('Inserting day 0 guilds into DB...')
+        with self.engine.connect() as conn:
+            conn.execute(update_statement)
+            conn.commit()
+        log.info('Insert successful')
+
+    def _rank_guilds(self, rank_list, dict_key):
+        curr_rank = 1
+        new_list = []
+
+        # Assuming list already sorted
+        for index, guild in enumerate(rank_list):
+            if index == 0:
+                # If first guilds
+                guild[dict_key] = curr_rank
+                curr_rank = curr_rank + 1
+            elif rank_list[index - 1]['point'] == guild['point']:
+                # If previous guild has same point, then use same rank
+                guild[dict_key] = rank_list[index - 1][dict_key]
+            else:
+                # Set rank and increment rank
+                guild[dict_key] = curr_rank
+                curr_rank = curr_rank + 1
+
+            new_list.append(guild)
+        return new_list
+
+
