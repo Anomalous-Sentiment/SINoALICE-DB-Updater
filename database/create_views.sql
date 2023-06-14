@@ -187,3 +187,10 @@ INNER JOIN timeslots ts USING (gvgtimetype)
 WHERE gld.ranking > 0
 GROUP BY gld.guilddataid, rks.rank_letter, gld.mastername, ts.gvgtimetype
 ORDER BY gld.ranking ASC;
+
+DROP VIEW IF EXISTS gc_stats;
+CREATE OR REPLACE VIEW gc_stats AS
+SELECT gc_data.gvgeventid, gc_data.ranking, gc_data.point
+FROM gc_data gc_data
+INNER JOIN gc_events events USING (gvgeventid)
+WHERE gc_data.updated_at > events.prelim_end AND gc_data.gcday = 6;
