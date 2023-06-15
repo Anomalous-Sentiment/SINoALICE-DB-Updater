@@ -195,12 +195,13 @@ WHERE gc_data.updated_at > events.prelim_end AND gc_data.gcday = 6;
 
 DROP VIEW IF EXISTS guild_summary;
 CREATE OR REPLACE VIEW guild_summary AS
-SELECT gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus AS ship_hp, gld.ranking, ts.timeslot, gld.guilddescription, gld.subscriptioncomment, SUM(player_cp.highest_cp) AS estimated_cp
+SELECT gld.guilddataid, gld.guildname AS guild, gld.mastername AS gm, gld.siegehp + gld.siegehpbonus AS ship_hp, gld.ranking AS overall_ranking, ranks.rank_letter, ts.timeslot, gld.guilddescription AS description, gld.subscriptioncomment AS recruit_msg, SUM(player_cp.highest_cp) AS estimated_cp
 FROM guilds gld
 INNER JOIN timeslots ts USING (gvgtimetype)
 INNER JOIN base_player_data players USING (guilddataid)
 INNER JOIN player_cp_list player_cp USING (userid)
-GROUP BY gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus, gld.ranking, ts.timeslot, gld.guilddescription, gld.subscriptioncomment
+INNER JOIN guild_ranks ranks USING (guildrank)
+GROUP BY gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus, gld.ranking, ranks.rank_letter, ts.timeslot, gld.guilddescription, gld.subscriptioncomment
 ORDER BY estimated_cp DESC;
 
 DROP VIEW IF EXISTS guild_members;
