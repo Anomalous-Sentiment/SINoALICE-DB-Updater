@@ -195,19 +195,25 @@ WHERE gc_data.updated_at > events.prelim_end AND gc_data.gcday = 6;
 
 DROP VIEW IF EXISTS guild_summary;
 CREATE OR REPLACE VIEW guild_summary AS
-SELECT gld.guilddataid, gld.guildname AS guild, gld.mastername AS gm, gld.siegehp + gld.siegehpbonus AS ship_hp, gld.ranking AS overall_ranking, ranks.rank_letter, ts.timeslot, gld.guilddescription AS description, gld.subscriptioncomment AS recruit_msg, SUM(player_cp.highest_cp) AS estimated_cp
+SELECT gld.guilddataid, gld.guildname AS "Guild Name", gld.mastername AS "Guild Master", gld.siegehp + gld.siegehpbonus AS "Ship HP", gld.ranking AS "Ranking", ranks.rank_letter AS "Rank", ts.timeslot AS "Timeslot", gld.guilddescription AS "Description", gld.subscriptioncomment AS "Recruitment Msg", SUM(player_cp.highest_cp) AS "Total Estimated CP"
 FROM guilds gld
 INNER JOIN timeslots ts USING (gvgtimetype)
 INNER JOIN base_player_data players USING (guilddataid)
 INNER JOIN player_cp_list player_cp USING (userid)
 INNER JOIN guild_ranks ranks USING (guildrank)
-GROUP BY gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus, gld.ranking, ranks.rank_letter, ts.timeslot, gld.guilddescription, gld.subscriptioncomment
-ORDER BY estimated_cp DESC;
+GROUP BY gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus, gld.ranking, ranks.rank_letter, ts.timeslot, gld.guilddescription, gld.subscriptioncomment;
 
 DROP VIEW IF EXISTS guild_members;
 CREATE OR REPLACE VIEW guild_members AS
-SELECT players.guilddataid, extra.gvgcharactermstid AS class_id, players.username, players.level, player_cp.highest_cp AS estimated_cp, players.totalpower AS current_cp
+SELECT players.playerid, players.guilddataid AS guild_id, extra.gvgcharactermstid AS class_id, players.username AS member, players.level, player_cp.highest_cp AS estimated_cp, players.totalpower AS current_cp
 FROM base_player_data players
 INNER JOIN extra_player_data extra USING (userid)
 INNER JOIN player_cp_list player_cp USING (userid);
 
+DROP VIEW IF EXISTS guild_gc_history;
+CREATE OR REPLACE VIEW guild_gc_history AS
+SELECT gdata.gvgeventid AS "gc_num", gdata.membernum AS "member_num", ts.timeslot, gdata.point AS "lifeforce", gdata.ranking AS "ranking", gdata.rankinginbattleterm AS "ts_ranking", gdata.winpoint AS "wins"
+FROM gc_data gdata
+INNER JOIN gc_events events USING (gvgeventid)
+INNER JOIN timeslots ts USING (gvgtimetype)
+WHERE gcday = 6 AND gdata.updated_at > events.prelim_end
