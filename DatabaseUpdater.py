@@ -1178,14 +1178,14 @@ class DatabaseUpdater():
             json.dump(final_list, json_file, indent=4)
 
         insert_rev_vals = insert(self.gc_data_table).values(final_list)
-        update_rev_vals = {col.name: col for col in insert_rev_vals.excluded if col.name not in ('guilddataid', 'gvgeventid', 'gcday')}
+        update_rev_vals = {col.name: col for col in insert_rev_vals.excluded if col.name in ('ranking', 'rankinginbattleterm', 'updated_at')}
         update_statement = insert_rev_vals.on_conflict_do_update(
             index_elements=['guilddataid', 'gvgeventid', 'gcday'], 
             set_=update_rev_vals
         )
 
         # Insert back into database
-        log.info('Inserting day 0 guilds into DB...')
+        log.info('Inserting updated ranks into DB...')
         with self.engine.connect() as conn:
             conn.execute(update_statement)
             conn.commit()
