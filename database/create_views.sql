@@ -132,7 +132,7 @@ CREATE OR REPLACE VIEW player_cp_list AS
 		base.userid,
 		base.username, 
 		players.level, 
-		gld.guildname,
+		base.guilddataid,
 		greatest(players.totalpower, extra_cp.currenttotalpower) highest_cp, 
 		players.maxhp,
 		players.totalpower AS "main_set_cp", 
@@ -155,9 +155,7 @@ CREATE OR REPLACE VIEW player_cp_list AS
 		END mdef
 	FROM base_player_data base
 	INNER JOIN players_max_cp players USING (userid)
-	INNER JOIN extra_players_max_cp extra_cp USING (userid)
-	INNER JOIN guilds gld USING (guilddataid);
-
+	LEFT JOIN extra_players_max_cp extra_cp USING (userid);
 
 DROP VIEW IF EXISTS new_human_guild_list;
 CREATE OR REPLACE VIEW new_human_guild_list AS
@@ -180,8 +178,8 @@ SELECT
     ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP(ORDER BY players.highest_cp)) AS "Median Member CP",
     date_trunc('second', gld.updated_at) AS "Last Updated"
 FROM player_cp_list players
-INNER JOIN base_player_data base_players USING (userid)
 INNER JOIN guilds gld USING (guilddataid)
+INNER JOIN base_player_data base_players USING (userid)
 INNER JOIN guild_ranks rks USING (guildrank)
 INNER JOIN timeslots ts USING (gvgtimetype)
 WHERE gld.ranking > 0
@@ -194,3 +192,21 @@ SELECT gc_data.gvgeventid, gc_data.ranking, gc_data.point
 FROM gc_data gc_data
 INNER JOIN gc_events events USING (gvgeventid)
 WHERE gc_data.updated_at > events.prelim_end AND gc_data.gcday = 6;
+
+DROP VIEW IF EXISTS guild_summary;
+CREATE OR REPLACE VIEW guild_summary AS
+SELECT gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus AS ship_hp, gld.ranking, ts.timeslot, gld.guilddescription, gld.subscriptioncomment, SUM(player_cp.highest_cp) AS estimated_cp
+FROM guilds gld
+INNER JOIN timeslots ts USING (gvgtimetype)
+INNER JOIN base_player_data players USING (guilddataid)
+INNER JOIN player_cp_list player_cp USING (userid)
+GROUP BY gld.guilddataid, gld.guildname, gld.mastername, gld.siegehp + gld.siegehpbonus, gld.ranking, ts.timeslot, gld.guilddescription, gld.subscriptioncomment
+ORDER BY estimated_cp DESC;
+
+DROP VIEW IF EXISTS guild_members;
+CREATE OR REPLACE VIEW guild_members AS
+SELECT players.guilddataid, extra.gvgcharactermstid AS class_id, players.username, players.level, player_cp.highest_cp AS estimated_cp, players.totalpower AS current_cp
+FROM base_player_data players
+INNER JOIN extra_player_data extra USING (userid)
+INNER JOIN player_cp_list player_cp USING (userid);
+
