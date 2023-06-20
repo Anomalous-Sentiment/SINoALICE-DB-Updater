@@ -216,4 +216,4 @@ SELECT gdata.gvgeventid AS "gc_num", gdata.membernum AS "member_num", ts.timeslo
 FROM gc_data gdata
 INNER JOIN gc_events events USING (gvgeventid)
 INNER JOIN timeslots ts USING (gvgtimetype)
-WHERE gcday = 6 AND gdata.updated_at > events.prelim_end
+WHERE gcday = 6 AND gdata.updated_at > events.prelim_end;
