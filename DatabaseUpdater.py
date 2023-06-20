@@ -67,7 +67,7 @@ class DatabaseUpdater():
         self.job_list = []
         self.sched = BlockingScheduler(timezone=utc)
         # Pre pool ping because database might not be started yet.
-        self.engine = create_engine(os.getenv('POSTGRES_URL'), pool_pre_ping=True, connect_args={'sslmode':'require'})
+        self.engine = create_engine(os.getenv('POSTGRES_URL'), pool_pre_ping=True, connect_args={'sslmode':'require', 'connect_timeout': 15})
         self.metadata = MetaData()
         self.guild_table = Table(
             'guilds', 
