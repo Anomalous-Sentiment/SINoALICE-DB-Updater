@@ -691,10 +691,25 @@ class DatabaseUpdater():
         match_list = []
         # Takes a list of guilds in a ts and predicts day 1 matchups
 
+        # Remove rank 0 guilds from the list if they exist, and append them to the end of the list (Otherwise they may affect top rank matchmaking. Not sure how they are handled right now)
+        def _filter_rank_0(row):
+            if row['ranking'] == 0:
+                return True
+            return False
+
+        def _filter_normal_ranks(row):
+            if row['ranking'] != 0:
+                return True
+            return False
+
+        reordered_list = []
+        reordered_list.extend(list(filter(_filter_normal_ranks, ts_guild_rank_list)))
+        reordered_list.extend(list(filter(_filter_rank_0, ts_guild_rank_list)))
+
         # Match each guild with the next guild in rankings
         # Get guilds in 1st, 3rd, 5th, places etc...
-        list_a = ts_guild_rank_list[0::2]
-        list_b = ts_guild_rank_list[1::2]
+        list_a = reordered_list[0::2]
+        list_b = reordered_list[1::2]
 
         log.info(f'list A:{len(list_a)}')
         log.info(f'list B:{len(list_b)}')
