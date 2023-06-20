@@ -447,8 +447,12 @@ class DatabaseUpdater():
             # Update the guilds
             guild_api = GuildAPI()
 
+
             # Update the players using guild list (Get from database)
+            log.info('Getting guild IDs from db...')
             guild_id_list = self._get_guild_ids()
+
+            log.info('Getting guild list using ID list...')
             guild_list = guild_api.get_guild_list(guild_id_list)
 
             # Update players with revised guild id list
