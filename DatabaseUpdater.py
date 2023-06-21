@@ -876,6 +876,35 @@ class DatabaseUpdater():
 
         log.info('Day 1 matches update complete')
 
+    def _check_ts_updated_ranks(self, gc_num, curr_day, timeslot):
+        equality_list = []
+        prev_day = curr_day - 1
+        time_type = (2 ** (timeslot - 1))
+
+        # Get current day data
+        get_curr_gc_data_statement = select(self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(and_(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == curr_day)).order_by(desc(self.gc_data_table.c.point), asc(self.gc_data_table.c.gvgeventrankingdataid)).limit(15)
+        # Get previous day data
+        get_prev_gc_data_statement = select(self.gc_data_table.c.guilddataid, self.gc_data_table.c.point).where(and_(self.gc_data_table.c.gvgeventid == gc_num, self.gc_data_table.c.gvgtimetype == time_type, self.gc_data_table.c.gcday == prev_day)).order_by(desc(self.gc_data_table.c.point), asc(self.gc_data_table.c.gvgeventrankingdataid)).limit(15)
+
+        with self.engine.connect() as conn:
+            curr_rankings =  conn.execute(get_curr_gc_data_statement).all()
+            prev_rankings = conn.execute(get_prev_gc_data_statement).all()
+            conn.commit()
+
+        # Zip and compare each guild ID and LF value row of both days.
+        for prev_row, curr_row in zip(prev_rankings, curr_rankings):
+            prev_guild_id, prev_lf = prev_row
+            curr_guild_id, curr_lf = curr_row
+
+            # If equal, add true to list, else false
+            if prev_guild_id == curr_guild_id and prev_lf == curr_lf:
+                equality_list.append(True)
+            else:
+                equality_list.append(False)
+
+
+        # If all true (All equal, then GC rankings are not updated, return false)
+        return not all(equality_list)
 
     def _general_gc_update(self, gc_num, day, timeslot, predict=True):
         try:
@@ -884,13 +913,27 @@ class DatabaseUpdater():
             self._full_gc_rank_update(day)
             log.info('Update Complete')
 
+            # Check if GC ranking data for the current day is different from the previous day
+            # This is needed in case the GC rankings haven't updated when this function is run
+            # If it is different, proceed with the GC predictions for the next day
+            # Otherwise, reschedule the GC update 5 mins later.
 
-            log.info('Run GC matchmaking: ' + str(predict))
+            log.info('Checking if rankings are updated...')
+            if self._check_ts_updated_ranks(gc_num, day, timeslot):
+                log.info('Rankings are updated.')
+                log.info('Run GC matchmaking: ' + str(predict))
 
-            # Check if matching function needs to be run
-            if predict == True:
-                # Run the matching function (Gets data from database)
-                self._general_matchmaking(gc_num, day, timeslot)
+                # Check if matching function needs to be run
+                if predict == True:
+                    # Run the matching function (Gets data from database)
+                    self._general_matchmaking(gc_num, day, timeslot)
+            else:
+                delay_interval = timedelta(minutes=5)
+                next_update = datetime.utcnow() + delay_interval
+                log.info(f'GC rankings not updated yet. Rescheduling another update at:{str(next_update)}')
+                rescheduled_job = self.sched.add_job(self._general_gc_update, run_date=next_update, args=[gc_num, day, timeslot, predict])
+                log.info('Rescheduling complete')
+
         except:
             tb = traceback.format_exc()
             log_exception('General GC update failed.', tb)
