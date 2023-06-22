@@ -644,6 +644,12 @@ class DatabaseUpdater():
                         #self.job_list.append(new_job)
 
                         log.info('Update Scheduled for day ' + str(day + 1) + ', timeslot: ' + str(timeslot) + ' at time: ' + str(update_datetime))
+
+            # Schedule one final update after all matches complete, 5 hours after reset if not passed yet
+            update_datetime = start_date + timedelta(days=prelim_days, hours=5)
+            if update_datetime > datetime.utcnow():
+                new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, prelim_days, 10, False])
+
         except:
             tb = traceback.format_exc()
             log_exception('Failed to schedule GC updates', tb)
