@@ -648,7 +648,9 @@ class DatabaseUpdater():
             # Schedule one final update after all matches complete, 5 hours after reset if not passed yet
             update_datetime = start_date + timedelta(days=prelim_days, hours=5)
             if update_datetime > datetime.utcnow():
-                new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, prelim_days, 10, False])
+                log.info('Scheduling final GC update...')
+                new_job = self.sched.add_job(self._general_gc_update, run_date=update_datetime, args=[curr_gc, prelim_days, 10, False], id=f'final_gc_{curr_gc}_update', replace_existing=True)
+                log.info(f'Scheduled final update at:{str(update_datetime)}')
 
         except:
             tb = traceback.format_exc()
