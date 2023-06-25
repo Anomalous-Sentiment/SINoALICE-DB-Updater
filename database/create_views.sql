@@ -210,16 +210,17 @@ FROM base_player_data players
 INNER JOIN extra_player_data extra USING (userid)
 INNER JOIN player_cp_list player_cp USING (userid);
 
+DROP VIEW IF EXISTS guild_names_history;
+CREATE OR REPLACE VIEW guild_names_history AS
+SELECT gdata.guilddataid, gdata.gvgeventid, ARRAY_AGG(DISTINCT(gdata.guildname)) AS guild_names
+FROM gc_data gdata
+GROUP BY gdata.guilddataid, gdata.gvgeventid;
+
 DROP VIEW IF EXISTS guild_gc_history;
 CREATE OR REPLACE VIEW guild_gc_history AS
-SELECT gdata.gvgeventid AS "gc_num", , gdata.membernum AS "member_num", ts.timeslot, gdata.point AS "lifeforce", gdata.ranking AS "ranking", gdata.rankinginbattleterm AS "ts_ranking", gdata.winpoint AS "wins"
+SELECT gdata.guilddataid, gdata.gvgeventid AS "gc_num", names.guild_names, gdata.membernum AS "member_num", ts.timeslot, gdata.point AS "lifeforce", gdata.ranking AS "ranking", gdata.rankinginbattleterm AS "ts_ranking", gdata.winpoint AS "wins"
 FROM gc_data gdata
 INNER JOIN gc_events events USING (gvgeventid)
 INNER JOIN timeslots ts USING (gvgtimetype)
+INNER JOIN guild_names_history names USING (guilddataid, gvgeventid)
 WHERE gcday = 6 AND gdata.updated_at > events.prelim_end;
-
-DROP VIEW IF EXISTS guild_names_history;
-CREATE OR REPLACE VIEW guild_names_history AS
-SELECT gdata.guilddataid, ARRAY_AGG(DISTINCT(gdata.guildname)) AS guild_names
-FROM gc_data gdata
-GROUP BY gdata.guilddataid
