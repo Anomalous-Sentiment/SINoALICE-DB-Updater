@@ -32,7 +32,7 @@ WITH cte AS (
         LEFT JOIN gc_data gt USING (guilddataid)
         ORDER BY gvgeventid, in_gld.guilddataid, gdays.gcday
     )
-    SELECT c.*, ARRAY_AGG(COALESCE(dt.point, 0) ORDER BY dt.gcday ASC) FILTER (WHERE dt.gcday <= cte.last_day AND dt.gvgeventid = c.gc_num) daily_lf, daily_data.opp_lf from crosstab(
+    SELECT c.*, ARRAY_AGG(COALESCE(dt.point, 0) ORDER BY dt.gcday ASC) FILTER (WHERE dt.gcday <= cte.last_day AND dt.gvgeventid = c.gc_num) daily_lf, daily_data.opp_lf, opp_ids.opp_ids from crosstab(
         -- crosstab to get all guild matchups each day in own column
         $$
             SELECT ARRAY[transition.gvgeventid, transition.guilddataid]::text[], transition.gvgeventid, transition.guilddataid, transition.timeslot, g.guildname, transition.points AS "total_lf", base.gcday, og.guildname
@@ -79,7 +79,13 @@ LEFT JOIN (
     -- Group by for aggregating opponent LF into array
     GROUP BY cte.gvgeventid, cte.guilddataid
 ) daily_data ON c.gc_num = daily_data.gvgeventid AND c.guild_id = daily_data.guilddataid
-GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6, daily_data.opp_lf
+LEFT JOIN (
+    SELECT last_cte.gvgeventid, last_cte.guilddataid, ARRAY_AGG(COALESCE(opp_pred_id.opponentguilddataid, 0) ORDER BY opp_pred_id.gcday ASC) AS "opp_ids"
+    FROM gc_predictions opp_pred_id
+    RIGHT JOIN cte last_cte USING (guilddataid, gvgeventid, gcday)
+    GROUP BY last_cte.guilddataid, last_cte.gvgeventid
+) opp_ids ON c.gc_num = opp_ids.gvgeventid AND c.guild_id = opp_ids.guilddataid
+GROUP BY c.rn, c.gc_num, c.guild_id, c.timeslot, c.guild, c.total_lf, c.day_1, c.day_2, c.day_3, c.day_4, c.day_5, c.day_6, daily_data.opp_lf, opp_ids.opp_ids
 ORDER BY c.total_lf DESC;
 
 -- View to display players logged in since a specified date
@@ -224,3 +230,18 @@ INNER JOIN gc_events events USING (gvgeventid)
 INNER JOIN timeslots ts USING (gvgtimetype)
 INNER JOIN guild_names_history names USING (guilddataid, gvgeventid)
 WHERE gcday = 6 AND gdata.updated_at > events.prelim_end;
+
+DROP VIEW IF EXISTS new_guild_names_history;
+CREATE OR REPLACE VIEW new_guild_names_history AS
+SELECT DISTINCT ON (gdata.guildname) gdata.guilddataid, gdata.gvgeventid, gdata.guildname
+FROM gc_data gdata;
+
+DROP VIEW IF EXISTS new_guild_gc_history;
+CREATE OR REPLACE VIEW new_guild_gc_history AS
+SELECT gdata.guilddataid, gdata.gvgeventid AS "gc_num", gdata.guildname, ARRAY_AGG(names.guildname) FILTER (WHERE names.guildname != gdata.guildname), gdata.membernum AS "member_num", ts.timeslot, gdata.point AS "lifeforce", gdata.ranking AS "ranking", gdata.rankinginbattleterm AS "ts_ranking", gdata.winpoint AS "wins"
+FROM gc_data gdata
+INNER JOIN gc_events events USING (gvgeventid)
+INNER JOIN timeslots ts USING (gvgtimetype)
+LEFT JOIN new_guild_names_history names USING (guilddataid, gvgeventid)
+WHERE gcday = 6 AND gdata.updated_at > events.prelim_end
+GROUP BY gdata.guilddataid, gdata.gvgeventid, gdata.guildname, gdata.membernum, ts.timeslot, gdata.point, gdata.ranking, gdata.rankinginbattleterm, gdata.winpoint;
