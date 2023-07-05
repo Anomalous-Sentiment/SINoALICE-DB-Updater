@@ -5,6 +5,7 @@ from sinoalice.api.GranColoAPI import GranColoAPI
 from sinoalice.api.NoticesParser import NoticesParser
 from sqlalchemy import create_engine, Table, MetaData, select, desc, asc, join, func, and_, delete
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.pool import NullPool
 import psycopg2
 from dotenv import load_dotenv
 from datetime import datetime, date, timedelta, time
@@ -67,7 +68,7 @@ class DatabaseUpdater():
         self.job_list = []
         self.sched = BlockingScheduler(timezone=utc)
         # Pre pool ping because database might not be started yet.
-        self.engine = create_engine(os.getenv('POSTGRES_URL'), pool_pre_ping=True, connect_args={'sslmode':'require', 'connect_timeout': 15})
+        self.engine = create_engine(os.getenv('POSTGRES_URL'), poolclass=NullPool, connect_args={'sslmode':'require', 'connect_timeout': 15})
         self.metadata = MetaData()
         self.guild_table = Table(
             'guilds', 
@@ -1283,3 +1284,14 @@ class DatabaseUpdater():
         return new_list
 
 
+    def _debug_func(self):
+        player_api = PlayerAPI()
+
+        # Get player ids from db
+        db_player_id_list = self._get_player_ids_from_db()
+        player_id_set = set(db_player_id_list)
+
+        # Get the list of basic player info using player ids
+        log.info('Getting player profile data (Base player data)...')
+        base_player_list = player_api.get_basic_player_info(list(player_id_set))
+        log.info('Player profile data retrieval successful')
