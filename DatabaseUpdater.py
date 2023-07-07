@@ -68,7 +68,7 @@ class DatabaseUpdater():
         self.job_list = []
         self.sched = BlockingScheduler(timezone=utc)
         # Pre pool ping because database might not be started yet.
-        self.engine = create_engine(os.getenv('POSTGRES_URL'), poolclass=NullPool, connect_args={'sslmode':'require', 'connect_timeout': 15})
+        self.engine = create_engine(os.getenv('POSTGRES_URL'), poolclass=NullPool, connect_args={'sslmode':'require', 'connect_timeout': 30})
         self.metadata = MetaData()
         self.guild_table = Table(
             'guilds', 
@@ -288,6 +288,10 @@ class DatabaseUpdater():
         # Get the players in guilds
         log.info('Getting guild player data (extra data)...')
         player_list = player_api.get_players_in_guilds(guild_list=guild_list)
+
+        # Save to json
+        #self._save_to_json('extra_player_data.json', player_list)
+        #player_list = self._load_from_json('extra_player_data.json')
         log.info('Guild player data retrieval successful')
 
         # Get player ids from db
@@ -302,6 +306,9 @@ class DatabaseUpdater():
         # Get the list of basic player info using player ids
         log.info('Getting player profile data (Base player data)...')
         base_player_list = player_api.get_basic_player_info(list(player_id_set))
+        # Save to json
+        #self._save_to_json('base_player_data.json', base_player_list)
+        #base_player_list = self._load_from_json('base_player_data.json')
         log.info('Player profile data retrieval successful')
 
         # Convert data into form suitable for database
@@ -455,6 +462,13 @@ class DatabaseUpdater():
 
             log.info('Getting guild list using ID list...')
             guild_list = guild_api.get_guild_list(guild_id_list)
+
+            # Save guild list to json
+            #self._save_to_json('guild_list.json', guild_list)
+            #guild_list = self._load_from_json('guild_list.json')
+
+            self._update_guild_gm_data(guild_list)
+
 
             # Update players with revised guild id list
             self._update_players(guild_list)
@@ -1295,3 +1309,14 @@ class DatabaseUpdater():
         log.info('Getting player profile data (Base player data)...')
         base_player_list = player_api.get_basic_player_info(list(player_id_set))
         log.info('Player profile data retrieval successful')
+
+    def _save_to_json(self, filename, data):
+        with open(filename, 'w') as json_file:
+            json.dump(data, json_file, indent=4)
+
+    def _load_from_json(self, filename):
+        with open(filename, 'r') as f:
+            data = json.load(f)
+
+        return data
+
