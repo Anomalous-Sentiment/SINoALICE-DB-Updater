@@ -299,17 +299,22 @@ class DatabaseUpdater():
 
         player_id_set = set(db_player_id_list)
 
+        
+
         # Add player ids from api to ids from db if unique using unique properties of set
         for player_data in player_list:
             player_id_set.add(player_data['userData']['userId'])
 
         # Get the list of basic player info using player ids
         log.info('Getting player profile data (Base player data)...')
+        log.info('Getting data of ' + str(len(player_id_set)) + ' players...')
         base_player_list = player_api.get_basic_player_info(list(player_id_set))
         # Save to json
         #self._save_to_json('base_player_data.json', base_player_list)
         #base_player_list = self._load_from_json('base_player_data.json')
+        log.info('Retrieved data of ' + str(len(base_player_list)) + ' players...')
         log.info('Player profile data retrieval successful')
+
 
         # Convert data into form suitable for database
         converted_base_player_list = self._process_base_player_data(base_player_list)
