@@ -245,3 +245,10 @@ INNER JOIN timeslots ts USING (gvgtimetype)
 LEFT JOIN new_guild_names_history names USING (guilddataid, gvgeventid)
 WHERE gcday = 6 AND gdata.updated_at > events.prelim_end
 GROUP BY gdata.guilddataid, gdata.gvgeventid, gdata.guildname, gdata.membernum, ts.timeslot, gdata.point, gdata.ranking, gdata.rankinginbattleterm, gdata.winpoint;
+
+DROP VIEW IF EXISTS gc_event_data;
+CREATE OR REPLACE VIEW gc_event_data AS
+SELECT events.gvgeventid, events.entry_start, events.entry_end, events.prelim_start, events.prelim_end, MAX(gdata.updated_at) AS "last_updated"
+FROM gc_events events
+LEFT JOIN gc_data gdata USING (gvgeventid)
+GROUP BY events.gvgeventid, events.entry_start, events.entry_end, events.prelim_start, events.prelim_end;
