@@ -1,7 +1,7 @@
 # SINoALICE-DB-Updater
 **NOTE: This project will no longer function, and is no longer being maintained due to SINoALICE Global ending service on 15 November 2023**
 
-A simple script for automatically updating SINoALICE Global data obtained from the game API. This forms the core of the Sinotracker project.
+A simple script for automatically updating SINoALICE Global data obtained from the game API. This forms the core of the SINoALICE Tracker project.
 
 This repository also provides the necessary SQL scripts for setting up a PostgreSQL database for the script to store data into [here](https://github.com/Anomalous-Sentiment/SINoALICE-DB-Updater/tree/main/database). Data for populating the database **NOT** included.
 
