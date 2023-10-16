@@ -3,7 +3,7 @@
 
 A simple script for automatically updating SINoALICE Global data obtained from the game API. This forms the core of the Sinotracker project.
 
-This repository also provides the necessary SQL scripts for setting up a PostgreSQL database for the script to store data into [here](https://github.com/Anomalous-Sentiment/SINoALICE-DB-Updater/tree/main/database).
+This repository also provides the necessary SQL scripts for setting up a PostgreSQL database for the script to store data into [here](https://github.com/Anomalous-Sentiment/SINoALICE-DB-Updater/tree/main/database). Data for populating the database **NOT** included.
 
 ## Overview
 I realise that this repository may look a bit messy, so I'll add this section as a brief explanation of how this all works in case anyone wants to know.
