@@ -32,6 +32,9 @@ git clone https://github.com/Anomalous-Sentiment/SINoALICE-DB-Updater.git --recu
 
 This is needed to include pull the required SINoALICE-API submodule included in the repo. Note that this will pull from the latest commit of the main branch.
 
+### Environment Variables
+Refer to the `example.env` file to see what variables are required. All variables used by the [SINoALICE API project](https://github.com/Anomalous-Sentiment/SINoALICE-Simplified-API) are required, in addition to a database URL and logging URL.
+
 ## Using the Docker Image
 For ease of use and simplicity, a Dockerfile has been provided to ensure minimal problems when running the Python scripts.
 
