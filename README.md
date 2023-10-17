@@ -20,6 +20,8 @@ The daily update function can be summarised as the following tasks:
     - If GC is available, schedule a function to pull GC ranking data after each GC timeslot
         - The GC update function also includes running the GC matchmaking function to predict the next GC match
 
+### DatabaseGenerator.py
+DatabaseGenerator.py is used to fill the database with dummy GC data. It is used only for testing purposes and requires the `guilds` table and `gc_events` table to be filled first. Use it by calling the `regenerate_gc_data` function and provide the GC number to generate data for.
 
 ## Setup
 This repository currently includes the following GitHub repository as a submodule
