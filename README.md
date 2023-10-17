@@ -21,7 +21,8 @@ The daily update function can be summarised as the following tasks:
         - The GC update function also includes running the GC matchmaking function to predict the next GC match
 
 ### DatabaseGenerator.py
-DatabaseGenerator.py is used to fill the database with dummy GC data. It is used only for testing purposes and requires the `guilds` table and `gc_events` table to be filled first. Use it by calling the `regenerate_gc_data` function and provide the GC number to generate data for.
+DatabaseGenerator.py is used to fill the database with dummy GC data. It is used only for testing purposes and requires the `guilds` table and `gc_events` table of the database to be filled first. Use it by calling the `regenerate_gc_data` function and provide the GC number to generate data for.
+
 
 ## Setup
 This repository currently includes the following GitHub repository as a submodule
@@ -34,8 +35,19 @@ git clone https://github.com/Anomalous-Sentiment/SINoALICE-DB-Updater.git --recu
 
 This is needed to pull the required SINoALICE-API submodule included in the repo. Note that this will pull from the latest commit of the main branch.
 
+### SQL Database Setup
+The [database](/database) directory contains all the SQL scripts needed to setup a PostgreSQL database for storing data.
+
+Run them in the following order:
+1. create_db.sql
+2. create_views.sql
+3. create_triggers.sql
+4. init_data.sql
+
+The remainder of the files are miscellaneous queries and not important. 
+
 ### Environment Variables
-Refer to the `example.env` file to see what variables are required. All variables used by the [SINoALICE API project](https://github.com/Anomalous-Sentiment/SINoALICE-Simplified-API) are required, in addition to a database URL and logging URL.
+Refer to the `example.env` file to see what variables are required. All variables used by the [SINoALICE API project](https://github.com/Anomalous-Sentiment/SINoALICE-Simplified-API) are required, in addition to a database URL and logging URL. For reference, logging was implemented with Papertrail logging in mind.
 
 ## Using the Docker Image
 For ease of use and simplicity, a Dockerfile has been provided to ensure minimal problems when running the Python scripts.
